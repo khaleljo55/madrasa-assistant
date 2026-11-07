@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://api.alquran.cloud">
+<title>المساعد الإداري</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="icon.png">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo">م</div>
+      <div>
+        <div class="brand-title">المساعد الإداري</div>
+        <div class="brand-sub" id="schoolNameSide">المدرسة</div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="side-foot"><div id="restInfo"></div><div id="sideFoot"></div></div>
+  </aside>
+  <main id="main">
+    <header id="topbar">
+      <div>
+        <h1 id="pageTitle"></h1>
+        <div id="pageDate" class="muted"></div>
+      </div>
+      <div id="topActions"></div>
+    </header>
+    <div id="syncBar"></div>
+    <section id="view"></section>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+<div id="print"></div>
+<script src="app.js"></script>
+<script src="tools.js"></script>
+<script src="quran.js"></script>
+</body>
+</html>

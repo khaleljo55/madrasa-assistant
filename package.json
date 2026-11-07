@@ -1,0 +1,49 @@
+{
+  "name": "madrasa-assistant",
+  "productName": "Madrasa Assistant",
+  "version": "1.0.0",
+  "description": "المساعد الإداري — تنظيم العمل الإداري في المدرسة",
+  "main": "main.js",
+  "author": "Khalil",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "sa.school.madrasa-assistant",
+    "productName": "Madrasa Assistant",
+    "copyright": "المساعد الإداري",
+    "artifactName": "Madrasa-Assistant-Setup-${version}.${ext}",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "app/**/*", "build/icon.ico", "package.json"],
+    "asar": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "executableName": "MadrasaAssistant"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "المساعد الإداري",
+      "uninstallDisplayName": "المساعد الإداري",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerLanguages": ["ar_SA"],
+      "language": "1025",
+      "unicode": true
+    }
+  }
+}

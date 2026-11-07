@@ -1,0 +1,68 @@
+name: بناء ملف التثبيت
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: رقم الإصدار
+        shell: bash
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
+      - name: تثبيت الأدوات
+        run: npm install --no-audit --no-fund
+
+      - name: بناء ملف التثبيت
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist
+
+      - name: فحص البرنامج بعد البناء
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist/win-unpacked -Filter *.exe | Select-Object -First 1
+          $out = Join-Path $env:RUNNER_TEMP "smoke"
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test=$out" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "انتهت مهلة الفحص" }
+          Get-Content "$out/smoke.json"
+          New-Item -ItemType Directory -Force report | Out-Null
+          Copy-Item "$out/*" report/
+          if ($p.ExitCode -ne 0) { throw "فشل الفحص" }
+
+      - name: نشر الإصدار
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="1.0.${{ github.run_number }}"
+          gh release create "v$V" dist/*.exe \
+            --title "المساعد الإداري $V" \
+            --notes "ملف التثبيت لنظام ويندوز. نزّل الملف Madrasa-Assistant-Setup-$V.exe ثم انقر عليه مرتين."
+
+      - name: تقرير البناء
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p report
+          ls -la dist > report/dist.txt 2>&1 || true
+          echo "run=${{ github.run_number }} status=${{ job.status }} sha=${{ github.sha }}" > report/status.txt
+          cd report
+          git init -q -b build-report
+          git config user.name "build-bot"
+          git config user.email "build-bot@users.noreply.github.com"
+          git add -A && git commit -qm "تقرير البناء ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" build-report

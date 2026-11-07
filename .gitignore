@@ -2,3 +2,7 @@ node_modules/
 dist/
 report/
 *.log
+
+build-log.txt
+check-report.json
+*.exe

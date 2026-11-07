@@ -1,4 +1,4 @@
-name: بناء ملف التثبيت
+name: Build installer
 
 on:
   push:
@@ -19,31 +19,31 @@ jobs:
         with:
           node-version: 20
 
-      - name: رقم الإصدار
+      - name: Set version
         shell: bash
         run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
 
-      - name: تثبيت الأدوات
+      - name: Install
         run: npm install --no-audit --no-fund
 
-      - name: بناء ملف التثبيت
+      - name: Build installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist
 
-      - name: فحص البرنامج بعد البناء
+      - name: Smoke test
         shell: pwsh
         run: |
           $exe = Get-ChildItem dist/win-unpacked -Filter *.exe | Select-Object -First 1
           $out = Join-Path $env:RUNNER_TEMP "smoke"
           $p = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test=$out" -PassThru
-          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "انتهت مهلة الفحص" }
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "smoke test timeout" }
           Get-Content "$out/smoke.json"
           New-Item -ItemType Directory -Force report | Out-Null
           Copy-Item "$out/*" report/
-          if ($p.ExitCode -ne 0) { throw "فشل الفحص" }
+          if ($p.ExitCode -ne 0) { throw "smoke test failed" }
 
-      - name: نشر الإصدار
+      - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,7 +53,7 @@ jobs:
             --title "المساعد الإداري $V" \
             --notes "ملف التثبيت لنظام ويندوز. نزّل الملف Madrasa-Assistant-Setup-$V.exe ثم انقر عليه مرتين."
 
-      - name: تقرير البناء
+      - name: Build report
         if: always()
         shell: bash
         run: |
@@ -64,5 +64,5 @@ jobs:
           git init -q -b build-report
           git config user.name "build-bot"
           git config user.email "build-bot@users.noreply.github.com"
-          git add -A && git commit -qm "تقرير البناء ${{ github.run_number }}"
+          git add -A && git commit -qm "build report ${{ github.run_number }}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" build-report

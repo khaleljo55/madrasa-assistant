@@ -78,7 +78,7 @@ const api = window.api || {
   // النسخة الاحتياطية تشمل البيانات وملفات مكتبة المعرفة
   exportData: async (d) => {
     const files = {};
-    for (const x of d.library || []) if (x.file?.stored) { const b = await IDB.get('files', x.file.stored); if (b) files[x.file.stored] = await blobToDataUrl(b); }
+    for (const x of [...(d.library || []), ...(d.correspondence || [])]) if (x.file?.stored) { const b = await IDB.get('files', x.file.stored); if (b) files[x.file.stored] = await blobToDataUrl(b); }
     downloadBlob(JSON.stringify({ ...d, _files: files }), `نسخة-احتياطية-المساعد-الإداري-${todayISO()}.json`, 'application/json');
     toast('حُفظت النسخة في مجلد «التنزيلات» — انسخها إلى فلاش أو Drive');
     return false;
@@ -158,7 +158,7 @@ const Sync = {
   async pushAttachments() {
     const ld = await this.libDir();
     if (!this.known) { this.known = new Set(); for await (const k of ld.keys()) this.known.add(k); }
-    for (const x of db.library) {
+    for (const x of [...db.library, ...(db.correspondence || [])]) {
       const st = x.file?.stored;
       if (!st || this.known.has(st)) continue;
       const b = await IDB.get('files', st).catch(() => null);
@@ -554,7 +554,7 @@ function taskRow(t) {
     <span class="prio ${t.priority || 'med'}"></span>
     <span class="check ${t.status === 'done' ? 'on' : ''}" data-act="taskToggle" data-id="${t.id}">${t.status === 'done' ? '✓' : ''}</span>
     <div class="grow"><div class="t">${esc(t.title)}</div>
-      <div class="s">${t.category ? esc(t.category) + ' · ' : ''}${t.due ? (late ? `<span style="color:var(--red)">متأخرة — ${fmtG(t.due)}</span>` : t.due === today ? 'اليوم' : fmtG(t.due)) : 'بدون موعد'}${t.status === 'doing' ? ' · <span style="color:var(--amber)">قيد التنفيذ</span>' : ''}</div>
+      <div class="s">${t.category ? esc(t.category) + ' · ' : ''}${t.due ? (late ? `<span style="color:var(--red)">متأخرة — ${fmtG(t.due)}</span>` : t.due === today ? 'اليوم' : `${fmtG(t.due)} · ${fmtH(t.due)}`) : 'بدون موعد'}${t.status === 'doing' ? ' · <span style="color:var(--amber)">قيد التنفيذ</span>' : ''}</div>
       ${t.notes ? `<div class="s">${esc(t.notes)}</div>` : ''}
     </div>
     <button class="icon-btn" data-act="taskEdit" data-id="${t.id}" title="تعديل">✏️</button>
@@ -679,7 +679,7 @@ VIEWS.teachers = {
       <thead><tr><th>#</th><th>الاسم</th><th>التخصص</th><th>البريد الإلكتروني</th><th>الجوال</th><th>أيام الغياب هذا العام</th><th></th></tr></thead>
       <tbody>${list.map((t, i) => {
         const days = db.absences.filter((a) => a.teacherId === t.id && !/تأخر|خروج/.test(a.type)).reduce((s, a) => s + workDays(a.date, a.dateTo), 0);
-        return `<tr><td>${i + 1}</td><td><b>${esc(t.name)}</b></td><td>${esc(t.subject)}</td><td>${t.email ? esc(t.email) : '<span class="chip amber">بلا بريد</span>'}</td><td>${esc(t.phone)}</td><td>${days}</td>
+        return `<tr><td>${i + 1}</td><td><b class="link" data-act="tProfile" data-id="${t.id}">${esc(t.name)}</b></td><td>${esc(t.subject)}</td><td>${t.email ? esc(t.email) : '<span class="chip amber">بلا بريد</span>'}</td><td>${esc(t.phone)}</td><td>${days}</td>
         <td class="actions"><button class="icon-btn" data-act="teacherEdit" data-id="${t.id}">✏️</button><button class="icon-btn" data-act="teacherDel" data-id="${t.id}">🗑️</button></td></tr>`;
       }).join('')}</tbody></table></div><div class="muted" style="margin-top:8px">عدد المعلمات: ${list.length}</div></div>`;
   },
@@ -728,8 +728,8 @@ VIEWS.absence = {
       <div class="card"><div class="table-wrap">${list.length ? `<table>
         <thead><tr><th>المعلمة</th><th>من</th><th>إلى</th><th>المدة</th><th>النوع</th><th>ملاحظات</th><th>فارس</th><th></th></tr></thead>
         <tbody>${list.map((a) => `<tr>
-          <td><b>${esc(tName(a.teacherId))}</b></td>
-          <td>${dayName(a.date)}<br><span class="muted">${fmtG(a.date)}</span></td>
+          <td><b class="link" data-act="tProfile" data-id="${a.teacherId}">${esc(tName(a.teacherId))}</b></td>
+          <td>${dayName(a.date)}<br><span class="muted">${fmtG(a.date)}</span><br><span class="muted">${fmtH(a.date)}</span></td>
           <td>${a.dateTo && a.dateTo !== a.date ? `${dayName(a.dateTo)}<br><span class="muted">${fmtG(a.dateTo)}</span>` : '—'}</td>
           <td>${/تأخر|خروج/.test(a.type) ? (a.duration || '—') : daysLabel(workDays(a.date, a.dateTo))}</td>
           <td><span class="chip ${absChipCls(a.type)}">${esc(a.type)}</span></td>

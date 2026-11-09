@@ -373,21 +373,7 @@ TOOL_VIEWS.docs = {
         <div class="section-title">مستنداتي</div>
         ${docs.length ? `<div class="list">${docs.map((x) => `<div class="li ${x.id === DOCS.id ? 'sel-row' : ''}"><div class="grow" style="cursor:pointer" data-act="docOpen" data-id="${x.id}"><div class="t">${esc(x.title)}</div><div class="s">${fmtG(x.updatedAt)}</div></div><button class="icon-btn" data-act="docDel" data-id="${x.id}">🗑️</button></div>`).join('')}</div>` : '<div class="muted">لا توجد مستندات بعد</div>'}
       </div>
-      <div class="d-main">${d ? `
-        <div class="card d-bar">
-          <input class="input" id="docTitle" value="${esc(d.title)}" style="width:200px" title="اسم المستند">
-          <span class="d-sep"></span>
-          <select class="input" data-change="docBlock" style="padding:4px 6px"><option value="">نمط الفقرة</option><option value="h1">عنوان رئيسي</option><option value="h2">عنوان فرعي</option><option value="p">نص عادي</option></select>
-          <button class="icon-btn" data-act="docCmd" data-id="bold" title="عريض"><b>B</b></button><button class="icon-btn" data-act="docCmd" data-id="italic" title="مائل"><i>I</i></button><button class="icon-btn" data-act="docCmd" data-id="underline" title="تسطير"><u>U</u></button>
-          <span class="d-sep"></span>
-          <button class="icon-btn" data-act="docCmd" data-id="justifyRight" title="محاذاة لليمين">⇶</button><button class="icon-btn" data-act="docCmd" data-id="justifyCenter" title="توسيط">≡</button><button class="icon-btn" data-act="docCmd" data-id="justifyLeft" title="محاذاة لليسار">⇇</button>
-          <button class="icon-btn" data-act="docCmd" data-id="insertUnorderedList" title="قائمة نقطية">•≡</button><button class="icon-btn" data-act="docCmd" data-id="insertOrderedList" title="قائمة مرقمة">1≡</button>
-          <span class="d-sep"></span>
-          <button class="btn sm" data-act="docTable">▦ جدول</button><button class="btn sm" data-act="docDate">📅 التاريخ</button><button class="btn sm" data-act="docLetterhead">🏛 ترويسة</button>
-          <button class="mic-btn" style="position:static" data-act="mic" data-target="#docPage" title="إملاء صوتي">🎤</button>
-        </div>
-        <div class="doc-wrap"><div class="doc-page" id="docPage" contenteditable="true" dir="rtl" spellcheck="true">${d.html}</div></div>`
-      : `<div class="card">${emptyState('📝', 'اختاري قالباً من القائمة لإنشاء مستند جديد، أو افتحي مستنداً محفوظاً')}</div>`}</div>
+      <div class="d-main">${docsMain()}</div>
     </div>`;
   },
   mount() {
@@ -401,6 +387,24 @@ TOOL_VIEWS.docs = {
     page.focus();
   },
 };
+function docsMain() {
+  const d = curDoc();
+  return d ? `
+        <div class="card d-bar">
+          <input class="input" id="docTitle" value="${esc(d.title)}" style="width:200px" title="اسم المستند">
+          <span class="d-sep"></span>
+          <select class="input" data-change="docBlock" style="padding:4px 6px"><option value="">نمط الفقرة</option><option value="h1">عنوان رئيسي</option><option value="h2">عنوان فرعي</option><option value="p">نص عادي</option></select>
+          <button class="icon-btn" data-act="docCmd" data-id="bold" title="عريض"><b>B</b></button><button class="icon-btn" data-act="docCmd" data-id="italic" title="مائل"><i>I</i></button><button class="icon-btn" data-act="docCmd" data-id="underline" title="تسطير"><u>U</u></button>
+          <span class="d-sep"></span>
+          <button class="icon-btn" data-act="docCmd" data-id="justifyRight" title="محاذاة لليمين">⇶</button><button class="icon-btn" data-act="docCmd" data-id="justifyCenter" title="توسيط">≡</button><button class="icon-btn" data-act="docCmd" data-id="justifyLeft" title="محاذاة لليسار">⇇</button>
+          <button class="icon-btn" data-act="docCmd" data-id="insertUnorderedList" title="قائمة نقطية">•≡</button><button class="icon-btn" data-act="docCmd" data-id="insertOrderedList" title="قائمة مرقمة">1≡</button>
+          <span class="d-sep"></span>
+          <button class="btn sm" data-act="docTable">▦ جدول</button><button class="btn sm" data-act="docDate">📅 التاريخ</button><button class="btn sm" data-act="docLetterhead">🏛 ترويسة</button>
+          <button class="mic-btn" style="position:static" data-act="mic" data-target="#docPage" title="إملاء صوتي">🎤</button>
+        </div>
+        <div class="doc-wrap"><div class="doc-page" id="docPage" contenteditable="true" dir="rtl" spellcheck="true">${d.html}</div></div>`
+      : `<div class="card">${emptyState('📝', 'اختاري قالباً من القائمة لإنشاء مستند جديد، أو افتحي مستنداً محفوظاً')}</div>`;
+}
 function docRestore() { const page = $('#docPage'); if (!page) return; page.focus(); if (DOCS.range) { const s = getSelection(); s.removeAllRanges(); s.addRange(DOCS.range); } }
 function docExec(cmd, val) { docRestore(); document.execCommand(cmd, false, val); $('#docPage')?.dispatchEvent(new Event('input')); }
 Object.assign(ACTIONS, {

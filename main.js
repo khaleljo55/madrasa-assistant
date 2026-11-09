@@ -1,12 +1,13 @@
 // المساعد الإداري — البرنامج المثبَّت (Electron)
 // الواجهة كاملة داخل مجلد app وتعمل دون متصفح؛ البيانات محفوظة داخل البرنامج على الجهاز.
-const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, session, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { exec } = require('child_process');
 
 const APP_ID = 'sa.school.madrasa-assistant';
+const UPDATE_REPO = 'khaleljo55/madrasa-assistant'; // تُنشر ملفات التثبيت الجديدة في Releases بهذا المستودع
 let win = null;
 
 // نسخة واحدة فقط من البرنامج
@@ -35,6 +36,17 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
+
+  // قبل الإغلاق: نطلب من الواجهة حفظ آخر التعديلات ثم نغلق (حماية من فقد آخر تعديل)
+  let flushed = false;
+  win.on('close', (e) => {
+    if (flushed || smokeArg) return;
+    e.preventDefault();
+    const done = () => { flushed = true; if (!win.isDestroyed()) win.close(); };
+    ipcMain.once('app:flushed', done);
+    win.webContents.send('app:flush');
+    setTimeout(done, 1500);
+  });
 
   // الروابط: صفحات الإنترنت (Gmail وغيرها) تُفتح في المتصفح الافتراضي، والملفات الداخلية (PDF وصور) في نافذة عرض
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -79,7 +91,7 @@ function runSmokeTest(outDir) {
       try {
         const res = await win.webContents.executeJavaScript(`(async () => {
           const out = { title: document.title, navItems: document.querySelectorAll('.nav-item').length, hasDb: typeof db === 'object' && !!db };
-          const views = ['dashboard','tasks','calendar','teachers','absence','entries','break','occasions','visits','library','quran','tools','settings'];
+          const views = ['dashboard','tasks','calendar','report','teachers','timetable','absence','entries','duties','break','occasions','visits','library','quran','tools','settings'];
           out.views = {};
           for (const v of views) { try { go(v); await new Promise(r => setTimeout(r, 150)); out.views[v] = document.querySelector('#view').innerHTML.length > 50; } catch (e) { out.views[v] = 'ERR ' + e.message; } }
           go('dashboard');
@@ -111,6 +123,45 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 
 ipcMain.handle('open:path', (_e, p) => shell.openPath(String(p)));
+ipcMain.handle('app:version', () => app.getVersion());
+
+// ───────── التحديث التلقائي ─────────
+// يقرأ أحدث إصدار منشور في GitHub Releases، ويقارنه بالإصدار الحالي، وينزّل ملف التثبيت ويشغّله.
+const verParts = (v) => String(v || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+function isNewer(a, b) { const x = verParts(a), y = verParts(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
+ipcMain.handle('update:check', async () => {
+  try {
+    const r = await net.fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: { 'User-Agent': 'MadrasaAssistant', Accept: 'application/vnd.github+json' } });
+    if (!r.ok) return { available: false, error: 'HTTP ' + r.status };
+    const j = await r.json();
+    const asset = (j.assets || []).find((a) => /\.exe$/i.test(a.name));
+    const version = String(j.tag_name || '').replace(/^v/i, '');
+    if (!asset || !isNewer(version, app.getVersion())) return { available: false, current: app.getVersion(), latest: version };
+    return { available: true, version, url: asset.browser_download_url, size: asset.size, notes: j.body || '' };
+  } catch (e) { return { available: false, error: e.message }; }
+});
+ipcMain.handle('update:install', async (_e, url) => {
+  try {
+    if (!/^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//.test(String(url))) throw new Error('رابط غير موثوق');
+    const r = await net.fetch(url, { headers: { 'User-Agent': 'MadrasaAssistant' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const total = Number(r.headers.get('content-length')) || 0;
+    const file = path.join(app.getPath('temp'), `Madrasa-Assistant-Update-${Date.now()}.exe`);
+    const out = fs.createWriteStream(file);
+    const reader = r.body.getReader(); let got = 0, lastPct = -1;
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      got += value.length; out.write(Buffer.from(value));
+      const pct = total ? Math.floor((got / total) * 100) : 0;
+      if (pct !== lastPct && win && !win.isDestroyed()) { lastPct = pct; win.webContents.send('update:progress', pct); }
+    }
+    await new Promise((res, rej) => out.end((err) => (err ? rej(err) : res())));
+    if (total && got < total) throw new Error('التنزيل غير مكتمل');
+    // نحفظ البيانات أولاً ثم نشغّل المثبّت ونغلق البرنامج
+    setTimeout(() => { shell.openPath(file); setTimeout(() => app.quit(), 800); }, 600);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 ipcMain.handle('show:folder', (_e, p) => shell.showItemInFolder(String(p)));
 
 // ───────── الإملاء الصوتي ─────────

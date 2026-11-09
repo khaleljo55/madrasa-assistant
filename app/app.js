@@ -325,7 +325,7 @@ const DEFAULT_OCCASIONS = [
 
 function freshDb() {
   return {
-    version: 1,
+    version: 2,
     settings: {
       schoolName: '', employeeName: '', senderName: '', gmailUser: '', gmailPass: '',
       supervisionDay: 1, periods: 7, voiceLang: 'ar-SA', notify: true,
@@ -333,7 +333,7 @@ function freshDb() {
       earlyBody: 'الأستاذة الفاضلة {المعلمة}\nالسلام عليكم ورحمة الله وبركاته\n\nنشكر لكِ حرصكِ والتزامكِ بالحضور المبكر إلى الحصة {الحصة} في فصل {الفصل} يوم {اليوم} الموافق {التاريخ}، فهذا الالتزام يعكس روح المسؤولية ويعدّ قدوة حسنة لطالباتنا.\n\nدمتِ متميزة،\n{الموظفة}\n{المدرسة}',
     },
     teachers: [], tasks: [], events: [], absences: [], classEntries: [],
-    breakNotes: [], visits: [], library: [],
+    breakNotes: [], visits: [], library: [], timetable: [],
     occasions: DEFAULT_OCCASIONS.map(([name, month, day, type]) => ({ id: uid(), name, month, day, type, initiative: '', responsible: '', status: 'todo', notes: '', year: null })),
   };
 }
@@ -346,6 +346,11 @@ function commit(rerender = true) {
   saveTimer = setTimeout(async () => { await api.save(db); Sync.push(); }, 400);
   if (rerender) render();
 }
+
+// نقاط ربط تضيف إليها الملفات الأخرى (extras.js) أجزاءها دون تعديل هذا الملف
+const HOOKS = {};
+const addHook = (name, fn) => (HOOKS[name] = HOOKS[name] || []).push(fn);
+const hook = (name, ...a) => (HOOKS[name] || []).map((f) => { try { return f(...a) || ''; } catch (e) { console.warn(e); return ''; } }).join('');
 
 // ═════════════ حالة الواجهة ═════════════
 const ui = {
@@ -523,6 +528,7 @@ VIEWS.dashboard = {
       <div class="card"><h3>📋 الغياب والإجازات اليوم</h3>
         ${absToday.length ? `<div class="list">${absToday.map((a) => `<div class="li"><div class="grow"><div class="t">${esc(tName(a.teacherId))}</div><div class="s">${a.dateTo && a.dateTo !== a.date ? `حتى ${fmtG(a.dateTo)}` : 'يوم واحد'}</div></div><span class="chip ${absChipCls(a.type)}">${esc(a.type)}</span></div>`).join('')}</div>` : emptyState('🌿', 'لا غياب مسجّل اليوم')}
       </div>
+      ${hook('dashCards', t)}
       <div class="card"><h3>🎉 مناسبات قادمة (30 يوماً) <span class="more"><button class="btn sm ghost" data-act="nav" data-id="occasions">الكل</button></span></h3>
         ${occs.length ? `<div class="list">${occs.slice(0, 5).map(({ o, d }) => { const st = OCC_STATUS[occStatus(o)]; const dd = diffDays(t, d); return `<div class="li"><div class="grow"><div class="t">${esc(o.name)}</div><div class="s">${fmtG(d)} · ${dd === 0 ? 'اليوم' : 'بعد ' + daysLabel(dd)}${o.initiative ? ' · ' + esc(o.initiative) : ' · لا توجد مبادرة بعد'}</div></div><span class="chip ${st.cls}">${st.label}</span></div>`; }).join('')}</div>` : emptyState('🗓️', 'لا مناسبات خلال الشهر القادم')}
       </div>
@@ -732,6 +738,7 @@ VIEWS.absence = {
           <td class="actions"><button class="icon-btn" data-act="absEdit" data-id="${a.id}">✏️</button><button class="icon-btn" data-act="absDel" data-id="${a.id}">🗑️</button></td></tr>`).join('')}
         </tbody></table>` : emptyState('📋', 'لا توجد سجلات غياب')}</div></div>
       <div class="grid">
+        ${hook('absenceSide')}
         <div class="card"><h3>حسب النوع (أيام عمل)</h3>${Object.keys(byType).length ? `<div class="list">${Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="li"><div class="grow">${esc(k)}</div><b>${v}</b></div>`).join('')}</div>` : '<div class="muted">—</div>'}</div>
         <div class="card"><h3>الأكثر غياباً</h3>${topT.length ? `<div class="list">${topT.map(([id, v]) => `<div class="li"><div class="grow">${esc(tName(id))}</div><b>${v}</b></div>`).join('')}</div>` : '<div class="muted">—</div>'}</div>
         <div class="card"><div class="muted">✓ عمود «فارس» لتعليم السجلات التي أُدخلت في نظام فارس. ${db.absences.filter((a) => !a.faris).length ? `<br><b style="color:var(--amber)">${db.absences.filter((a) => !a.faris).length} سجل لم يُدخل بعد.</b>` : ''}</div></div>
@@ -754,7 +761,7 @@ function openAbsence(a) {
     ],
     values: a || { date: todayISO(), type: ABSENCE_TYPES[0] },
     validate: (v) => (v.dateTo && v.dateTo < v.date ? 'تاريخ النهاية قبل تاريخ البداية' : null),
-    onSave: (v) => { if (v.dateTo === v.date) v.dateTo = ''; if (a) Object.assign(a, v); else db.absences.push({ id: uid(), ...v }); commit(); toast('تم حفظ سجل الغياب', 'ok'); },
+    onSave: (v) => { if (v.dateTo === v.date) v.dateTo = ''; if (a) Object.assign(a, v); else db.absences.push({ id: uid(), ...v }); commit(); toast('تم حفظ سجل الغياب', 'ok'); hook('absenceSaved', v); },
   });
 }
 
@@ -780,6 +787,7 @@ VIEWS.entries = {
       <span class="spacer"></span>
       ${Object.entries(ENTRY_STATUS).map(([k, s]) => `<span class="chip ${s.cls}">${s.label}: ${counts[k]}</span>`).join('')}
     </div>
+    ${hook('entriesTop', d)}
     <div class="card" style="margin-bottom:16px"><h3>➕ تسجيل متابعة</h3>
       <div class="inline-form" id="entryForm">
         <div class="field"><label>الحصة</label><select class="input" name="period">${periods.map((p) => `<option value="${p}" ${ui.lastPeriod == p ? 'selected' : ''}>الحصة ${p}</option>`).join('')}</select></div>
@@ -800,7 +808,7 @@ VIEWS.entries = {
           <td>${e.period}</td><td><b>${esc(tName(e.teacherId))}</b></td><td>${esc(e.className)}</td>
           <td><select class="input" style="padding:3px 6px" data-change="entryStatus" data-id="${e.id}">${Object.entries(ENTRY_STATUS).map(([k, s]) => `<option value="${k}" ${e.status === k ? 'selected' : ''}>${s.label}</option>`).join('')}</select></td>
           <td>${esc(e.time)}</td><td>${esc(e.notes)}</td>
-          <td>${e.status === 'early' ? (e.emailed ? `<span class="chip green" data-act="entryMail" data-id="${e.id}" style="cursor:pointer" title="إعادة الإرسال">✓ أُرسل</span>` : `<button class="btn sm" data-act="entryMail" data-id="${e.id}">💌 شكر</button>`) : ''}</td>
+          <td>${e.status === 'early' ? (e.emailed ? `<span class="chip green" data-act="entryMail" data-id="${e.id}" style="cursor:pointer" title="إعادة الإرسال">✓ أُرسل${e.thanksVia === 'wa' ? ' 💬' : ''}</span>` : `<button class="btn sm" data-act="entryMail" data-id="${e.id}">💌 شكر</button>`) : ''}</td>
           <td class="actions"><button class="icon-btn" data-act="entryDel" data-id="${e.id}">🗑️</button></td></tr>`; }).join('')}
         </tbody></table>` : emptyState('🚪', 'لا متابعات مسجّلة في هذا اليوم')}</div>
       </div>
@@ -827,13 +835,23 @@ function fillGroup(tpl, g) {
     .replace(/\{الموظفة\}/g, s.employeeName || '').replace(/\{المدرسة\}/g, s.schoolName || '');
 }
 const fillTemplate = (tpl, e) => fillGroup(tpl, { teacherId: e.teacherId, date: e.date, entries: [e] });
-const TH = { date: null, groups: [], sel: new Set(), focus: null, edits: {}, queue: null, qi: 0 };
+const TH = { date: null, groups: [], sel: new Set(), focus: null, edits: {}, queue: null, qi: 0, channel: 'email' };
+// رقم الجوال بصيغة واتساب الدولية (السعودية افتراضياً)
+function waNumber(phone) {
+  let n = String(phone || '').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
+  if (n.startsWith('00')) n = n.slice(2);
+  if (n.startsWith('05') && n.length === 10) n = '966' + n.slice(1);
+  else if (n.startsWith('5') && n.length === 9) n = '966' + n;
+  return n.length >= 10 ? n : '';
+}
+const thContact = (id) => (TH.channel === 'wa' ? waNumber(teacher(id)?.phone) : teacher(id)?.email || '');
+const TH_CH = { email: { ic: '📧', name: 'البريد', none: 'بلا بريد', app: 'Gmail' }, wa: { ic: '💬', name: 'واتساب', none: 'بلا جوال', app: 'واتساب' } };
 const thSent = (g) => g.entries.every((e) => e.emailed);
 const thMsg = (g) => ({ subject: TH.edits[g.teacherId]?.subject ?? db.settings.earlySubject, body: TH.edits[g.teacherId]?.body ?? fillGroup(db.settings.earlyBody, g) });
 function openThanks(date, only) {
-  TH.date = date; TH.groups = thanksGroups(date); TH.edits = {}; TH.queue = null; TH.qi = 0;
+  TH.date = date; TH.groups = thanksGroups(date); TH.edits = {}; TH.queue = null; TH.qi = 0; TH.channel = db.settings.thanksChannel || 'email'; TH.only = only;
   if (!TH.groups.length) return toast('لا توجد معلمات مسجّلات «حضرت مبكراً» في هذا اليوم');
-  const can = (g) => !!teacher(g.teacherId)?.email;
+  const can = (g) => !!thContact(g.teacherId);
   TH.sel = new Set(TH.groups.filter((g) => (only ? only.includes(g.teacherId) : !thSent(g)) && can(g)).map((g) => g.teacherId));
   TH.focus = (only && only[0]) || [...TH.sel][0] || TH.groups[0].teacherId;
   renderThanks();
@@ -844,37 +862,40 @@ function renderThanks() {
   if (TH.queue) {
     const q = TH.queue, cur = q[TH.qi];
     body = `<div class="th-steps">${q.map((g, i) => `<div class="th-step ${i < TH.qi ? 'done' : i === TH.qi ? 'cur' : ''}"><span>${i < TH.qi ? '✓' : i + 1}</span>${esc(tName(g.teacherId))}</div>`).join('')}</div>
-      ${cur ? `<div class="th-now"><div class="muted">رسالة ${TH.qi + 1} من ${q.length}</div><div class="th-now-name">${esc(tName(cur.teacherId))}</div><div class="muted" dir="ltr">${esc(teacher(cur.teacherId)?.email)}</div>
-        <button class="btn primary th-big" data-act="thOpen">📧 فتح رسالتها في Gmail</button>
-        <div class="muted" style="margin-top:8px">بعد الضغط على «إرسال» في Gmail، عودي هنا للرسالة التالية.</div></div>`
+      ${cur ? `<div class="th-now"><div class="muted">رسالة ${TH.qi + 1} من ${q.length}</div><div class="th-now-name">${esc(tName(cur.teacherId))}</div><div class="muted" dir="ltr">${esc(TH.channel === 'wa' ? '+' + thContact(cur.teacherId) : thContact(cur.teacherId))}</div>
+        <button class="btn primary th-big" data-act="thOpen">${TH_CH[TH.channel].ic} فتح رسالتها في ${TH_CH[TH.channel].app}</button>
+        <div class="muted" style="margin-top:8px">بعد الضغط على «إرسال» في ${TH_CH[TH.channel].app}، عودي هنا للرسالة التالية.</div></div>`
       : `<div class="th-now"><div style="font-size:44px">🌷</div><div class="th-now-name">تم تجهيز كل رسائل الشكر</div><div class="muted">${q.length === 1 ? 'رسالة واحدة' : q.length === 2 ? 'رسالتان' : q.length <= 10 ? q.length + ' رسائل' : q.length + ' رسالة'}، كل واحدة باسم صاحبتها</div></div>`}`;
     foot = cur ? `<button class="btn" data-act="thSkip">تخطّي هذه المعلمة</button><button class="btn ghost" data-act="thBack">→ رجوع للاختيار</button>` : `<button class="btn primary" data-act="modalClose">إغلاق</button>`;
   } else {
     const g = TH.groups.find((x) => x.teacherId === TH.focus) || TH.groups[0];
     const t = teacher(g.teacherId), m = thMsg(g), edited = !!TH.edits[g.teacherId];
-    const nSel = TH.sel.size, selectable = TH.groups.filter((x) => teacher(x.teacherId)?.email);
+    const nSel = TH.sel.size, selectable = TH.groups.filter((x) => thContact(x.teacherId)), C = TH_CH[TH.channel], contact = thContact(g.teacherId);
     body = `<div class="th-grid">
       <div class="th-list">
+        <div class="seg th-ch">${Object.entries(TH_CH).map(([k, c]) => `<button class="${TH.channel === k ? 'on' : ''}" data-act="thChannel" data-id="${k}">${c.ic} ${c.name}</button>`).join('')}</div>
         <div class="th-tools"><span class="muted">حضرن مبكراً: ${TH.groups.length}</span><span style="flex:1"></span>
           <button class="btn sm ghost" data-act="thAll">تحديد الكل</button><button class="btn sm ghost" data-act="thNone">إلغاء التحديد</button></div>
-        ${TH.groups.map((x) => { const em = teacher(x.teacherId)?.email; const sent = thSent(x);
+        ${TH.groups.map((x) => { const em = thContact(x.teacherId); const sent = thSent(x);
           return `<div class="th-row ${x.teacherId === g.teacherId ? 'on' : ''}" data-act="thFocus" data-id="${x.teacherId}">
-            <input type="checkbox" ${TH.sel.has(x.teacherId) ? 'checked' : ''} ${em ? '' : 'disabled'} data-change="thSel" data-id="${x.teacherId}" title="${em ? 'تحديد' : 'لا يوجد بريد'}">
+            <input type="checkbox" ${TH.sel.has(x.teacherId) ? 'checked' : ''} ${em ? '' : 'disabled'} data-change="thSel" data-id="${x.teacherId}" title="${em ? 'تحديد' : C.none}">
             <div class="grow"><div class="t">${esc(tName(x.teacherId))}</div><div class="s">الحصة ${esc(joinAr([...new Set(x.entries.map((e) => String(e.period)))]))}${x.entries.some((e) => e.className) ? ' · فصل ' + esc(joinAr([...new Set(x.entries.map((e) => e.className).filter(Boolean))])) : ''}</div></div>
-            ${!em ? '<span class="chip red">بلا بريد</span>' : sent ? '<span class="chip green">✓ أُرسل</span>' : TH.edits[x.teacherId] ? '<span class="chip brand">معدّلة</span>' : ''}
+            ${!em ? `<span class="chip red">${C.none}</span>` : sent ? '<span class="chip green">✓ أُرسل</span>' : TH.edits[x.teacherId] ? '<span class="chip brand">معدّلة</span>' : ''}
           </div>`; }).join('')}
       </div>
       <div class="th-preview">
-        <div class="th-to"><span class="muted">إلى:</span> <b>${esc(tName(g.teacherId))}</b> ${t?.email ? `<span class="muted" dir="ltr">&lt;${esc(t.email)}&gt;</span>` : ''}</div>
-        ${t?.email ? '' : `<div class="th-noemail">لا يوجد بريد لهذه المعلمة. أضيفيه الآن:<div style="display:flex;gap:6px;margin-top:6px"><input class="input" id="thEmail" dir="ltr" placeholder="name@gmail.com" style="flex:1"><button class="btn sm primary" data-act="thAddEmail" data-id="${g.teacherId}">حفظ البريد</button></div></div>`}
-        <div class="field" style="margin-top:10px"><label>الموضوع</label><input class="input" value="${esc(m.subject)}" data-change="thSubj" data-id="${g.teacherId}"></div>
+        <div class="th-to"><span class="muted">إلى:</span> <b>${esc(tName(g.teacherId))}</b> ${contact ? `<span class="muted" dir="ltr">&lt;${esc(TH.channel === 'wa' ? '+' + contact : contact)}&gt;</span>` : ''}</div>
+        ${contact ? '' : TH.channel === 'wa'
+          ? `<div class="th-noemail">لا يوجد رقم جوال صحيح لهذه المعلمة. أضيفيه الآن:<div style="display:flex;gap:6px;margin-top:6px"><input class="input" id="thEmail" dir="ltr" placeholder="05xxxxxxxx" style="flex:1"><button class="btn sm primary" data-act="thAddEmail" data-id="${g.teacherId}">حفظ الجوال</button></div></div>`
+          : `<div class="th-noemail">لا يوجد بريد لهذه المعلمة. أضيفيه الآن:<div style="display:flex;gap:6px;margin-top:6px"><input class="input" id="thEmail" dir="ltr" placeholder="name@gmail.com" style="flex:1"><button class="btn sm primary" data-act="thAddEmail" data-id="${g.teacherId}">حفظ البريد</button></div></div>`}
+        ${TH.channel === 'wa' ? '' : `<div class="field" style="margin-top:10px"><label>الموضوع</label><input class="input" value="${esc(m.subject)}" data-change="thSubj" data-id="${g.teacherId}"></div>`}
         <div class="field" style="margin-top:10px"><label>نص الرسالة <span class="muted" style="font-weight:400">— خاص بـ${esc(tName(g.teacherId))} فقط</span></label>
           <textarea class="input" rows="11" data-change="thBody" data-id="${g.teacherId}">${esc(m.body)}</textarea></div>
         ${edited ? `<button class="btn sm ghost" data-act="thRevert" data-id="${g.teacherId}">↺ إرجاع النص الأصلي</button>` : '<div class="muted" style="font-size:12px">القالب العام يُعدَّل من الإعدادات ← رسالة الشكر للحضور المبكر</div>'}
       </div>
     </div>`;
-    foot = `<button class="btn primary" data-act="thStart" ${nSel ? '' : 'disabled'}>📧 ${nSel === 1 ? `إرسال الشكر إلى ${esc(tName([...TH.sel][0]))}` : `إرسال ${nSel === 2 ? 'رسالتين' : nSel <= 10 ? nSel + ' رسائل' : nSel + ' رسالة'} — كل رسالة باسم معلمتها`}</button><button class="btn" data-act="modalClose">إلغاء</button>
-      <span style="flex:1"></span><span class="muted">${selectable.length < TH.groups.length ? `${TH.groups.length - selectable.length} بلا بريد` : ''}</span>`;
+    foot = `<button class="btn primary" data-act="thStart" ${nSel ? '' : 'disabled'}>${C.ic} ${nSel === 0 ? 'اختاري المعلمات أولاً' : nSel === 1 ? `إرسال الشكر إلى ${esc(tName([...TH.sel][0]))}` : `إرسال ${nSel === 2 ? 'رسالتين' : nSel <= 10 ? nSel + ' رسائل' : nSel + ' رسالة'} — كل رسالة باسم معلمتها`}</button><button class="btn" data-act="modalClose">إلغاء</button>
+      <span style="flex:1"></span><span class="muted">${selectable.length < TH.groups.length ? `${TH.groups.length - selectable.length} ${C.none}` : ''}</span>`;
   }
   $('#modalRoot').innerHTML = `<div class="modal-back" data-act="modalBack"><div class="modal th-modal">
     <div class="modal-h"><h2>💌 رسائل الشكر — ${dayName(date)} ${fmtG(date)}</h2><button class="icon-btn" data-act="modalClose">✕</button></div>
@@ -883,13 +904,15 @@ function renderThanks() {
 }
 async function thOpenCurrent() {
   const g = TH.queue[TH.qi], t = teacher(g.teacherId), m = thMsg(g), s = db.settings;
-  if (api.isDesktop && s.gmailUser && s.gmailPass) {
+  if (TH.channel === 'wa') {
+    api.openUrl(`https://wa.me/${thContact(g.teacherId)}?text=${encodeURIComponent(m.body)}`);
+  } else if (api.isDesktop && s.gmailUser && s.gmailPass) {
     const r = await api.sendMail({ settings: s, to: t.email, subject: m.subject, text: m.body });
     if (!r.ok) return toast(`تعذّر الإرسال إلى ${tName(g.teacherId)}: ${r.error}`, 'err');
   } else {
     api.openUrl(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(t.email)}&su=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`);
   }
-  g.entries.forEach((e) => { e.emailed = true; e.emailedAt = todayISO(); });
+  g.entries.forEach((e) => { e.emailed = true; e.emailedAt = todayISO(); e.thanksVia = TH.channel; });
   commit(false); TH.qi++; renderThanks();
   if (TH.qi >= TH.queue.length) render();
 }
@@ -1225,6 +1248,7 @@ VIEWS.settings = {
         <span class="hint">المتغيرات المتاحة: {المعلمة} {الحصة} {الفصل} {اليوم} {التاريخ} {الموظفة} {المدرسة}</span></div>
       </div></div>
       ${typeof phrasesCard === 'function' ? phrasesCard() : ''}
+      ${hook('settingsCards')}
       <div class="card" style="grid-column:1/-1"><details class="adv" ${ui.advOpen ? 'open' : ''}><summary data-act="advToggle"><h3 style="display:inline-flex;margin:0">🛠️ إعدادات متقدمة</h3></summary>
         <div class="section-title" style="margin-top:14px">إظهار الأقسام في القائمة</div>
         <div class="muted" style="margin-bottom:10px">أزيلي العلامة عن أي قسم لإخفائه من القائمة. البيانات لا تُحذف، ويعود القسم بمحتواه كاملاً عند إظهاره.</div>
@@ -1451,8 +1475,17 @@ const ACTIONS = {
   thAll: () => { TH.groups.forEach((g) => teacher(g.teacherId)?.email && TH.sel.add(g.teacherId)); renderThanks(); },
   thNone: () => { TH.sel.clear(); renderThanks(); },
   thRevert: (el) => { delete TH.edits[el.dataset.id]; renderThanks(); },
+  thChannel: (el) => {
+    TH.channel = el.dataset.id; db.settings.thanksChannel = TH.channel; commit(false);
+    TH.sel = new Set(TH.groups.filter((g) => (TH.only ? TH.only.includes(g.teacherId) : !thSent(g)) && thContact(g.teacherId)).map((g) => g.teacherId));
+    renderThanks();
+  },
   thAddEmail: (el) => {
     const v = $('#thEmail').value.trim();
+    if (TH.channel === 'wa') {
+      if (!waNumber(v)) return toast('رقم الجوال غير صحيح', 'err');
+      teacher(el.dataset.id).phone = v; TH.sel.add(el.dataset.id); commit(false); renderThanks(); return toast('حُفظ الجوال في بيانات المعلمة ✓', 'ok');
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return toast('البريد غير صحيح', 'err');
     teacher(el.dataset.id).email = v; TH.sel.add(el.dataset.id); commit(false); renderThanks(); toast('حُفظ البريد في بيانات المعلمة ✓', 'ok');
   },
@@ -1597,7 +1630,7 @@ document.addEventListener('keydown', (e) => {
 function migrate(d) {
   const base = freshDb();
   const out = { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}) } };
-  for (const k of ['teachers', 'tasks', 'events', 'absences', 'classEntries', 'breakNotes', 'visits', 'occasions', 'library']) if (!Array.isArray(out[k])) out[k] = base[k];
+  for (const k of ['teachers', 'tasks', 'events', 'absences', 'classEntries', 'breakNotes', 'visits', 'occasions', 'library', 'timetable']) if (!Array.isArray(out[k])) out[k] = base[k];
   if (out.settings.voiceLang === 'ar-EG') out.settings.voiceLang = 'ar-SA';
   out.flags = out.flags || {};
   if (!out.flags.islamicOcc) {
@@ -1624,9 +1657,17 @@ function startupNotify() {
   try { if ('Notification' in window && Notification.permission !== 'denied') new Notification('المساعد الإداري', { body: msgs.join(' • ') }); } catch { }
 }
 (async function init() {
+  // ننتظر تحميل كل ملفات البرنامج (الأدوات والإضافات) قبل البدء
+  if (document.readyState === 'loading') await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
   const d = await api.load();
+  // نسخة احتياطية تلقائية قبل ترقية بنية البيانات (لا يُحذف أي شيء، وتمكن استعادتها من الإعدادات)
+  if (d && (d.version || 1) < 2) {
+    try { await IDB.put('kv', 'backup-before-v2', { date: new Date().toISOString(), data: JSON.parse(JSON.stringify(d)) }); d.flags = { ...(d.flags || {}), preUpgradeBackup: 'backup-before-v2' }; } catch (e) { console.warn('pre-upgrade backup failed', e); }
+    d.version = 2;
+  }
   db = migrate(d || freshDb());
   if (!d) api.save(db);
+  for (const f of HOOKS.beforeStart || []) await f();
   render();
   await Sync.init();
   startupNotify();

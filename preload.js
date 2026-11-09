@@ -7,4 +7,9 @@ contextBridge.exposeInMainWorld('madrasaNative', {
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (_e, info) => cb(info)),
   openPath: (p) => ipcRenderer.invoke('open:path', p),
   showInFolder: (p) => ipcRenderer.invoke('show:folder', p),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: (url) => ipcRenderer.invoke('update:install', url),
+  onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
+  onFlush: (cb) => ipcRenderer.on('app:flush', () => Promise.resolve(cb()).finally(() => ipcRenderer.send('app:flushed'))),
 });

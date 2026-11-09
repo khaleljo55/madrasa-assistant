@@ -1,8 +1,7 @@
 name: Build installer
 
+# التشغيل يدوي فقط (حساب GitHub مقفل حالياً من جهة الفوترة)
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

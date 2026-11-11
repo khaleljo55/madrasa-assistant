@@ -448,6 +448,13 @@ async function htmlToDocx(root) {
     return out;
   };
   const para = (n, opt = {}) => new X.Paragraph({ bidirectional: true, alignment: AL(n), children: runs(n, opt.f || {}), heading: opt.heading, bullet: opt.bullet, spacing: { after: 120 } });
+  const imgPara = (n) => {
+    const m = /^data:image\/(png|jpe?g|gif);base64,(.+)$/.exec(n.getAttribute('src') || ''); if (!m) return null;
+    const bin = atob(m[2]), data = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+    let w = +n.getAttribute('width') || n.naturalWidth || 600, h = +n.getAttribute('height') || n.naturalHeight || 400;
+    if (w > 620) { h = Math.round((h * 620) / w); w = 620; }
+    return new X.Paragraph({ alignment: X.AlignmentType.CENTER, children: [new X.ImageRun({ data, type: m[1] === 'jpeg' || m[1] === 'jpg' ? 'jpg' : m[1], transformation: { width: w, height: h } })] });
+  };
   const blocks = (container) => {
     const out = []; let inline = null;
     const flush = () => { if (inline) { out.push(new X.Paragraph({ bidirectional: true, alignment: container.nodeType === 1 ? AL(container) : undefined, children: inline })); inline = null; } };
@@ -458,6 +465,7 @@ async function htmlToDocx(root) {
       if (/^(B|STRONG|I|EM|U|SPAN|FONT|A)$/.test(tag)) { (inline = inline || []).push(...runs(n, { b: /B|STRONG/.test(tag), i: /^(I|EM)$/.test(tag), u: tag === 'U' })); return; }
       if (tag === 'BR') { flush(); return; }
       flush();
+      if (tag === 'IMG') { const im = imgPara(n); if (im) out.push(im); return; }
       if (tag === 'H1') out.push(para(n, { heading: X.HeadingLevel.HEADING_1, f: { b: true, size: 36 } }));
       else if (tag === 'H2' || tag === 'H3') out.push(para(n, { heading: X.HeadingLevel.HEADING_2, f: { b: true, size: 30 } }));
       else if (tag === 'UL') n.querySelectorAll(':scope > li').forEach((li) => out.push(para(li, { bullet: { level: 0 } })));
@@ -475,7 +483,7 @@ async function htmlToDocx(root) {
         if (rows.length) out.push(new X.Table({ rows, width: { size: 100, type: X.WidthType.PERCENTAGE }, visuallyRightToLeft: true }));
         out.push(new X.Paragraph({ children: [] }));
       } else if (/^(DIV|P|SECTION|ARTICLE|BLOCKQUOTE|LI)$/.test(tag)) {
-        if (n.querySelector('table, ul, ol, h1, h2, p, div')) out.push(...blocks(n)); else out.push(para(n));
+        if (n.querySelector('table, ul, ol, h1, h2, p, div, img')) out.push(...blocks(n)); else out.push(para(n));
       } else out.push(para(n));
     });
     flush();
@@ -797,7 +805,7 @@ const loadZip = () => loadScript('lib/jszip.js').then(() => JSZip);
 const OCC_COLS = ['المناسبة', 'اليوم', 'الشهر', 'التقويم', 'النوع', 'المبادرة', 'المسؤولة', 'ملاحظات'];
 const xmlEsc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const colName = (i) => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
-async function buildXlsx(rows, widths) {
+async function buildXlsx(rows, widths, sheetName = 'البيانات') {
   const Z = await loadZip(); const z = new Z();
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
 <cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => {
@@ -806,7 +814,7 @@ async function buildXlsx(rows, widths) {
   }).join('')}</row>`).join('')}</sheetData></worksheet>`;
   z.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
   z.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  z.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="المناسبات" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  z.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEsc(String(sheetName).replace(/[\\/?*:[\]]/g, ' ').slice(0, 31))}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
   z.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
   z.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="12"/><name val="Arial"/></font><font><b/><sz val="12"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F6B5C"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment horizontal="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
   z.file('xl/worksheets/sheet1.xml', sheet);
@@ -864,7 +872,7 @@ Object.assign(ACTIONS, {
   occXlsxOut: async () => {
     const rows = [OCC_COLS, ...db.occasions.slice().sort((a, b) => (a.cal === 'h') - (b.cal === 'h') || a.month - b.month || a.day - b.day)
       .map((o) => [o.name, o.day, o.cal === 'h' ? HMONTHS[o.month - 1] : MONTHS[o.month - 1], o.cal === 'h' ? 'هجري' : 'ميلادي', (OCC_TYPES[o.type] || OCC_TYPES.global)[0], o.initiative || '', o.responsible || '', o.notes || ''])];
-    openBlob(await buildXlsx(rows, [34, 8, 14, 10, 10, 40, 20, 24]), `الأيام-العالمية-والوطنية-${new Date().getFullYear()}.xlsx`, true);
+    openBlob(await buildXlsx(rows, [34, 8, 14, 10, 10, 40, 20, 24], 'المناسبات'), `الأيام-العالمية-والوطنية-${new Date().getFullYear()}.xlsx`, true);
     toast('حُفظ ملف Excel في «التنزيلات» — عدّليه ثم استورديه', 'ok');
   },
   occXlsxIn: async () => {

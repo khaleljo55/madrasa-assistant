@@ -497,7 +497,7 @@ async function checkUpdate(manual) {
   try {
     const r = await N.updateCheck();
     UPD.checked = true; UPD.info = r?.available ? r : null;
-    if (manual) toast(r?.available ? `يتوفر الإصدار ${r.version}` : r?.error ? 'تعذّر الاتصال بخادم التحديثات' : 'لديكِ أحدث إصدار ✓', r?.available ? 'ok' : '');
+    if (manual) toast(r?.available ? `يتوفر الإصدار ${r.version}` : r?.error ? 'تعذّر الاتصال بخادم التحديثات — تأكدي من الإنترنت' : 'لديكِ أحدث إصدار ✓', r?.available ? 'ok' : '');
     renderUpdBar(); if (ui.view === 'settings') render();
   } catch { if (manual) toast('تعذّر البحث عن تحديث', 'err'); }
 }

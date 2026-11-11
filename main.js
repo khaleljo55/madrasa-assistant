@@ -208,6 +208,7 @@ function isNewer(a, b) { const x = verParts(a), y = verParts(b); for (let i = 0;
 ipcMain.handle('update:check', async () => {
   try {
     const r = await net.fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: { 'User-Agent': 'MadrasaAssistant', Accept: 'application/vnd.github+json' } });
+    if (r.status === 404) return { available: false, current: app.getVersion(), none: true };
     if (!r.ok) return { available: false, error: 'HTTP ' + r.status };
     const j = await r.json();
     const asset = (j.assets || []).find((a) => /\.exe$/i.test(a.name));

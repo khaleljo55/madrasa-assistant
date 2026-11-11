@@ -1,6 +1,6 @@
 // المساعد الإداري — البرنامج المثبَّت (Electron)
 // الواجهة كاملة داخل مجلد app وتعمل دون متصفح؛ البيانات محفوظة داخل البرنامج على الجهاز.
-const { app, BrowserWindow, ipcMain, shell, Menu, session, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, session, net, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -124,6 +124,58 @@ app.on('window-all-closed', () => app.quit());
 
 ipcMain.handle('open:path', (_e, p) => shell.openPath(String(p)));
 ipcMain.handle('app:version', () => app.getVersion());
+
+// ───────── المزامنة التلقائية عبر OneDrive / Google Drive ─────────
+// يكتشف البرنامج مجلد السحابة المسجّل على هذا الجهاز ويزامن داخل مجلد فرعي باسم البرنامج.
+// كل جهاز يستخدم حسابه المسجّل؛ لا توجد أي صلاحيات أو روابط مخزّنة داخل البرنامج.
+const SYNC_DIRNAME = 'بيانات المساعد الإداري';
+let syncRoot = null; // المسار الوحيد المسموح بالقراءة والكتابة فيه
+const isDir = (p) => { try { return !!p && fs.statSync(p).isDirectory(); } catch { return false; } };
+function detectClouds() {
+  const out = [], seen = new Set();
+  const add = (kind, label, base) => { if (isDir(base) && !seen.has(base.toLowerCase())) { seen.add(base.toLowerCase()); out.push({ kind, label, base, path: path.join(base, SYNC_DIRNAME), exists: isDir(path.join(base, SYNC_DIRNAME)) }); } };
+  const env = process.env, home = app.getPath('home');
+  add('onedrive', 'OneDrive', env.OneDriveConsumer || '');
+  add('onedrive', 'OneDrive', env.OneDrive || '');
+  add('onedrive', 'OneDrive (العمل)', env.OneDriveCommercial || '');
+  add('onedrive', 'OneDrive', path.join(home, 'OneDrive'));
+  if (process.platform === 'win32') {
+    for (const L of 'GHIJKLMNOPQRSTUVWXYZ') for (const n of ['My Drive', 'ملفاتي', 'Mon Drive']) add('gdrive', 'Google Drive', `${L}:\\${n}`);
+  }
+  add('gdrive', 'Google Drive', path.join(home, 'Google Drive', 'My Drive'));
+  if (!isDir(path.join(home, 'Google Drive', 'My Drive'))) add('gdrive', 'Google Drive', path.join(home, 'Google Drive'));
+  return out;
+}
+function safePath(rel) {
+  if (!syncRoot) throw new Error('المزامنة غير مفعّلة');
+  const p = path.resolve(syncRoot, String(rel));
+  if (p !== syncRoot && !p.startsWith(syncRoot + path.sep)) throw new Error('مسار غير مسموح');
+  return p;
+}
+ipcMain.handle('sync:detect', () => detectClouds());
+ipcMain.handle('sync:setRoot', (_e, base) => {
+  // يُقبل فقط مجلد سحابة مكتشف على هذا الجهاز أو مجلد اختاره المستخدم بنفسه من نافذة الاختيار
+  const ok = detectClouds().some((c) => c.base === base) || pickedBases.has(base) || isDir(path.join(String(base), SYNC_DIRNAME));
+  if (!ok || !isDir(base)) return { ok: false, error: 'المجلد غير متاح على هذا الجهاز' };
+  const root = path.join(base, SYNC_DIRNAME);
+  fs.mkdirSync(path.join(root, 'library'), { recursive: true });
+  syncRoot = path.resolve(root);
+  return { ok: true, path: syncRoot };
+});
+const pickedBases = new Set();
+ipcMain.handle('sync:pick', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'اختيار مجلد المزامنة', properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  const base = r.filePaths[0].endsWith(SYNC_DIRNAME) ? path.dirname(r.filePaths[0]) : r.filePaths[0];
+  pickedBases.add(base);
+  return base;
+});
+ipcMain.handle('sync:clear', () => { syncRoot = null; return true; });
+ipcMain.handle('sync:readText', (_e, rel) => { try { return fs.readFileSync(safePath(rel), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } });
+ipcMain.handle('sync:writeText', (_e, rel, text) => { const p = safePath(rel); fs.writeFileSync(p + '.tmp', String(text)); fs.renameSync(p + '.tmp', p); return true; });
+ipcMain.handle('sync:readBin', (_e, rel) => { try { return fs.readFileSync(safePath(rel)); } catch { return null; } });
+ipcMain.handle('sync:writeBin', (_e, rel, data) => { const p = safePath(rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, Buffer.from(data)); return true; });
+ipcMain.handle('sync:list', (_e, rel) => { try { return fs.readdirSync(safePath(rel)); } catch { return []; } });
 
 // ───────── التحديث التلقائي ─────────
 // يقرأ أحدث إصدار منشور في GitHub Releases، ويقارنه بالإصدار الحالي، وينزّل ملف التثبيت ويشغّله.

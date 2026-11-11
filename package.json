@@ -1,7 +1,7 @@
 {
   "name": "madrasa-assistant",
   "productName": "Madrasa Assistant",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "المساعد الإداري — تنظيم العمل الإداري في المدرسة",
   "main": "main.js",
   "author": "Khalil",

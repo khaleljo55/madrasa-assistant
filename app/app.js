@@ -128,41 +128,83 @@ async function getFileBlob(stored) {
 }
 
 // ═════════════ المزامنة بين الأجهزة (عبر مجلد OneDrive أو Google Drive) ═════════════
+// طريقتان للوصول إلى مجلد المزامنة:
+// - البرنامج المثبَّت: يكتشف OneDrive / Google Drive تلقائياً ويكتب عبر البرنامج نفسه (دون اختيار مجلد)
+// - نسخة المتصفح: مجلد يختاره المستخدم (File System Access)
+const NSync = window.madrasaNative?.sync || null;
+const SyncFS = {
+  native: {
+    readText: (n) => NSync.readText(n),
+    writeText: (n, t) => NSync.writeText(n, t),
+    list: (sub) => NSync.list(sub),
+    readBlob: async (sub, n) => { const b = await NSync.readBin(`${sub}/${n}`); return b ? new Blob([b]) : null; },
+    writeBlob: async (sub, n, blob) => NSync.writeBin(`${sub}/${n}`, new Uint8Array(await blob.arrayBuffer())),
+  },
+  fsa: {
+    readText: async (n) => { try { const fh = await Sync.dir.getFileHandle(n); return await (await fh.getFile()).text(); } catch { return null; } },
+    writeText: (n, t) => SyncFS.fsa._write(Sync.dir, n, t),
+    _write: async (dir, n, data) => { const fh = await dir.getFileHandle(n, { create: true }); const w = await fh.createWritable(); await w.write(data); await w.close(); },
+    _sub: (sub) => Sync.dir.getDirectoryHandle(sub, { create: true }),
+    list: async (sub) => { const out = []; for await (const k of (await SyncFS.fsa._sub(sub)).keys()) out.push(k); return out; },
+    readBlob: async (sub, n) => { try { return await (await (await SyncFS.fsa._sub(sub)).getFileHandle(n)).getFile(); } catch { return null; } },
+    writeBlob: async (sub, n, blob) => SyncFS.fsa._write(await SyncFS.fsa._sub(sub), n, blob),
+  },
+};
+const CLOUD_ICON = { onedrive: '☁️', gdrive: '🟢', custom: '📁' };
 const Sync = {
-  dir: null, status: 'off', base: 0, known: null, busy: false, conflict: null,
-  supported: () => !window.api && typeof window.showDirectoryPicker === 'function',
+  dir: null, cfg: null, status: 'off', base: 0, known: null, busy: false, conflict: null, clouds: [],
+  supported: () => !!NSync || (!window.api && typeof window.showDirectoryPicker === 'function'),
+  get fs() { return this.cfg ? SyncFS.native : SyncFS.fsa; },
+  get label() { return this.cfg ? `${this.cfg.label}` : this.dir?.name || ''; },
+  hasLocalData: () => db.teachers.length + db.tasks.length + db.absences.length + db.library.length + (db.classEntries?.length || 0) > 0,
   async init() {
     if (!this.supported()) return;
     try {
-      this.dir = await IDB.get('kv', 'syncDir');
       this.base = (await IDB.get('kv', 'syncBase')) || 0;
-      if (!this.dir) return;
-      const p = await this.dir.queryPermission({ mode: 'readwrite' });
-      this.status = p === 'granted' ? 'on' : 'paused';
-      if (this.status === 'on') await this.reconcile();
-    } catch { this.status = 'error'; }
+      if (NSync) {
+        this.clouds = await NSync.detect();
+        const cfg = await IDB.get('kv', 'syncNative');
+        if (cfg) await this.connect(cfg, false);
+        else if (!(await IDB.get('kv', 'syncAutoOff'))) {
+          // أول تشغيل: تفعيل تلقائي عبر OneDrive (أو Google Drive) إن وُجد على الجهاز
+          const c = this.clouds.find((x) => x.kind === 'onedrive') || this.clouds[0];
+          if (c) await this.connect({ base: c.base, kind: c.kind, label: c.label }, true);
+        }
+      } else {
+        this.dir = await IDB.get('kv', 'syncDir');
+        if (this.dir) {
+          const p = await this.dir.queryPermission({ mode: 'readwrite' });
+          this.status = p === 'granted' ? 'on' : 'paused';
+          if (this.status === 'on') await this.reconcile();
+        }
+      }
+    } catch (e) { this.status = 'error'; this.error = e.message; }
     renderSyncBar();
   },
+  // ربط مجلد سحابة على هذا الجهاز (البرنامج المثبَّت)
+  async connect(cfg, first) {
+    const r = await NSync.setRoot(cfg.base);
+    if (!r?.ok) { this.cfg = cfg; this.status = 'error'; this.error = r?.error || ''; return; }
+    this.cfg = { ...cfg, path: r.path }; this.status = 'on'; this.known = null;
+    await IDB.put('kv', 'syncNative', { base: cfg.base, kind: cfg.kind, label: cfg.label });
+    await IDB.del('kv', 'syncAutoOff').catch(() => { });
+    if (!first) return this.reconcile();
+    const remote = await this.readRemote();
+    if (remote && this.hasLocalData()) return this.setConflict(remote);
+    if (remote) { await this.load(remote, true); toast(`🔄 رُبط البرنامج بـ${cfg.label} وحُمّلت بياناتكِ`, 'ok'); }
+    else { await this.push(true); toast(`🔄 المزامنة تعمل تلقائياً عبر ${cfg.label}`, 'ok'); }
+    render();
+  },
   async setBase(v) { this.base = v; try { await IDB.put('kv', 'syncBase', v); } catch { } },
-  async readRemote() {
-    try { const fh = await this.dir.getFileHandle('data.json'); return JSON.parse(await (await fh.getFile()).text()); } catch { return null; }
-  },
-  async writeFile(dir, name, data) {
-    const fh = await dir.getFileHandle(name, { create: true });
-    const w = await fh.createWritable(); await w.write(data); await w.close();
-  },
-  async libDir() { return this.dir.getDirectoryHandle('library', { create: true }); },
-  async readAttachment(stored) {
-    try { const fh = await (await this.libDir()).getFileHandle(stored); return await fh.getFile(); } catch { return null; }
-  },
+  async readRemote() { try { const t = await this.fs.readText('data.json'); return t ? JSON.parse(t) : null; } catch { return null; } },
+  async readAttachment(stored) { try { return await this.fs.readBlob('library', stored); } catch { return null; } },
   async pushAttachments() {
-    const ld = await this.libDir();
-    if (!this.known) { this.known = new Set(); for await (const k of ld.keys()) this.known.add(k); }
+    if (!this.known) this.known = new Set(await this.fs.list('library'));
     for (const x of [...db.library, ...(db.correspondence || [])]) {
       const st = x.file?.stored;
       if (!st || this.known.has(st)) continue;
       const b = await IDB.get('files', st).catch(() => null);
-      if (b) { await this.writeFile(ld, st, b); this.known.add(st); }
+      if (b) { await this.fs.writeBlob('library', st, b); this.known.add(st); }
     }
   },
   // مقارنة بيانات هذا الجهاز مع المجلد واختيار الأحدث
@@ -185,7 +227,7 @@ const Sync = {
         const remote = await this.readRemote();
         if (remote && (remote.meta?.updatedAt || 0) > this.base) { this.busy = false; return this.setConflict(remote); }
       }
-      await this.writeFile(this.dir, 'data.json', JSON.stringify(db));
+      await this.fs.writeText('data.json', JSON.stringify(db));
       await this.setBase(db.meta?.updatedAt || 0);
       await this.pushAttachments();
       this.lastOk = new Date();
@@ -194,6 +236,7 @@ const Sync = {
   },
   async load(remote, quiet) {
     db = migrate(remote);
+    for (const f of HOOKS.beforeStart || []) { try { await f(); } catch { } }
     await api.save(db);
     await this.setBase(db.meta?.updatedAt || 0);
     this.conflict = null; this.lastOk = new Date();
@@ -206,27 +249,33 @@ const Sync = {
     try { await this.reconcile(); } catch { }
     renderSyncBar();
   },
-  async choose() {
+  async choose(base) {
+    if (NSync) {
+      if (!base) { base = await NSync.pick(); if (!base) return; }
+      const c = this.clouds.find((x) => x.base === base);
+      return this.connect({ base, kind: c?.kind || 'custom', label: c?.label || base.split(/[\\/]/).pop() || base }, true);
+    }
     let root;
     try { root = await window.showDirectoryPicker({ id: 'madrasa-sync', mode: 'readwrite' }); } catch { return; }
     const dir = await root.getDirectoryHandle('بيانات المساعد الإداري', { create: true });
     this.dir = dir; this.status = 'on'; this.known = null;
     await IDB.put('kv', 'syncDir', dir);
     const remote = await this.readRemote();
-    const hasLocal = db.teachers.length + db.tasks.length + db.absences.length + db.library.length > 0;
-    if (remote && hasLocal) return this.setConflict(remote);
+    if (remote && this.hasLocalData()) return this.setConflict(remote);
     if (remote) await this.load(remote);
     else { await this.push(true); toast('تم تفعيل المزامنة ✓', 'ok'); }
     render();
   },
   async resume() {
+    if (NSync && this.cfg) { await this.connect(this.cfg, false); render(); return; }
     try { const p = await this.dir.requestPermission({ mode: 'readwrite' }); this.status = p === 'granted' ? 'on' : 'paused'; } catch { this.status = 'paused'; }
     if (this.status === 'on') { await this.reconcile(); toast('المزامنة تعمل ✓', 'ok'); }
     render();
   },
   async stop() {
-    this.dir = null; this.status = 'off'; this.conflict = null;
-    try { await IDB.del('kv', 'syncDir'); } catch { }
+    this.dir = null; this.cfg = null; this.status = 'off'; this.conflict = null;
+    try { await IDB.del('kv', 'syncDir'); await IDB.del('kv', 'syncNative'); await IDB.put('kv', 'syncAutoOff', true); } catch { }
+    if (NSync) NSync.clear();
     render();
   },
 };
@@ -234,6 +283,39 @@ function deviceId() {
   let id = null;
   try { id = localStorage.getItem('madrasa-device'); if (!id) { id = uid(); localStorage.setItem('madrasa-device', id); } } catch { }
   return id;
+}
+function syncCard() {
+  const last = Sync.lastOk ? ' · آخر مزامنة: ' + Sync.lastOk.toLocaleTimeString('ar-SA-u-nu-latn', { timeStyle: 'short' }) : '';
+  if (NSync) {
+    const C = Sync.clouds || [];
+    if (Sync.status === 'off') return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
+      ${C.length ? `<div class="muted">اضغطي على السحابة المسجّلة على هذا الجهاز، فتعمل المزامنة فوراً دون اختيار أي مجلد. على الجهاز الآخر تُفعَّل تلقائياً إذا كان مسجّلاً بالحساب نفسه.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${C.map((c) => `<button class="btn primary" data-act="syncCloud" data-id="${esc(c.base)}">${CLOUD_ICON[c.kind] || '☁️'} تفعيل عبر ${esc(c.label)}</button>`).join('')}<button class="btn" data-act="syncChoose">📁 مجلد آخر</button></div>`
+      : `<div class="muted">لم يُعثر على OneDrive أو Google Drive على هذا الجهاز. سجّلي الدخول إلى OneDrive (أيقونة السحابة بجانب الساعة) ثم أعيدي فتح البرنامج، فتعمل المزامنة تلقائياً.</div>
+        <button class="btn" style="margin-top:12px" data-act="syncChoose">📁 اختيار مجلد يدوياً</button>`}</div>`;
+    return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="chip ${Sync.status === 'on' ? 'green' : 'red'}">${Sync.status === 'on' ? 'تعمل تلقائياً ✓' : 'متوقفة'}</span>
+        <span>${CLOUD_ICON[Sync.cfg?.kind] || '☁️'} <b>${esc(Sync.label)}</b></span><span class="muted">${last}</span>
+        <span class="spacer" style="flex:1"></span>
+        ${Sync.status === 'on' ? '<button class="btn sm" data-act="syncNow">مزامنة الآن</button>' : '<button class="btn sm primary" data-act="syncResume">إعادة المحاولة</button>'}
+        ${C.filter((c) => c.base !== Sync.cfg?.base).map((c) => `<button class="btn sm" data-act="syncCloud" data-id="${esc(c.base)}">التبديل إلى ${esc(c.label)}</button>`).join('')}
+        <button class="btn sm danger" data-act="syncStop">إيقاف المزامنة</button></div>
+      <div class="muted" style="margin-top:8px;font-size:12px" dir="auto">مكان الحفظ: ${esc(Sync.cfg?.path || '')}</div>
+      <div class="muted" style="margin-top:4px">تُحفظ البيانات والمرفقات في حسابكِ على السحابة باستمرار، وتنتقل إلى أي جهاز آخر مسجّل بالحساب نفسه ومثبّت عليه البرنامج.</div></div>`;
+  }
+  return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
+    ${Sync.status === 'off' ? `<div class="muted">لاستخدام التطبيق من أكثر من جهاز: اختاري مجلداً داخل <b>OneDrive</b> أو <b>Google Drive</b>، وكرّري الأمر نفسه على الجهاز الآخر واختاري المجلد ذاته. بعدها تنتقل البيانات والمرفقات بين الأجهزة تلقائياً.</div>
+      <button class="btn primary" style="margin-top:12px" data-act="syncChoose">اختيار مجلد المزامنة</button>`
+    : `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="chip ${Sync.status === 'on' ? 'green' : 'amber'}">${Sync.status === 'on' ? 'تعمل ✓' : Sync.status === 'paused' ? 'بانتظار التفعيل' : 'متوقفة'}</span>
+        <span class="muted">المجلد: ${esc(Sync.dir?.name || '')}${last}</span>
+        <span class="spacer" style="flex:1"></span>
+        ${Sync.status === 'on' ? '<button class="btn sm" data-act="syncNow">مزامنة الآن</button>' : '<button class="btn sm primary" data-act="syncResume">تفعيل</button>'}
+        <button class="btn sm" data-act="syncChoose">تغيير المجلد</button>
+        <button class="btn sm danger" data-act="syncStop">إيقاف المزامنة</button></div>
+      <div class="muted" style="margin-top:8px">عند فتح التطبيق قد يطلب المتصفح الموافقة على الوصول للمجلد؛ اختاري «السماح في كل زيارة» حتى لا يتكرر الطلب.</div>`}
+  </div>`;
 }
 function renderSyncBar() {
   const el = $('#syncBar'); if (!el) return;
@@ -245,7 +327,7 @@ function renderSyncBar() {
   } else if (Sync.status === 'paused') {
     el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span>🔄</span><div>المزامنة بانتظار موافقتكِ</div><span class="spacer"></span><button class="btn sm primary" data-act="syncResume">تفعيل المزامنة</button></div>`;
   } else if (Sync.status === 'error') {
-    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>⚠️</span><div>تعذّرت المزامنة. تأكدي أن مجلد المزامنة موجود.</div><span class="spacer"></span><button class="btn sm" data-act="syncChoose">اختيار المجلد من جديد</button></div>`;
+    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>⚠️</span><div>تعذّرت المزامنة${NSync ? ` عبر ${esc(Sync.label)} — تأكدي أن السحابة مسجّلة ومتصلة على هذا الجهاز` : '. تأكدي أن مجلد المزامنة موجود.'}</div><span class="spacer"></span>${NSync && Sync.cfg ? '<button class="btn sm primary" data-act="syncResume">إعادة المحاولة</button>' : ''}<button class="btn sm" data-act="syncChoose">اختيار مجلد آخر</button></div>`;
   } else el.innerHTML = '';
 }
 
@@ -1230,18 +1312,7 @@ VIEWS.settings = {
         <div class="muted" style="margin-top:8px">في أول مرة سيطلب Gmail تسجيل الدخول بحسابكِ داخل نافذة التطبيق، ويبقى مسجلاً بعدها.</div>
         <button class="btn" style="margin-top:12px" data-act="openUrl" data-id="https://mail.google.com">تسجيل الدخول إلى Gmail الآن</button>
       </div>`}
-      ${Sync.supported() ? `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
-        ${Sync.status === 'off' ? `<div class="muted">لاستخدام التطبيق من أكثر من جهاز: اختاري مجلداً داخل <b>OneDrive</b> أو <b>Google Drive</b>، وكرّري الأمر نفسه على الجهاز الآخر واختاري المجلد ذاته. بعدها تنتقل البيانات والمرفقات بين الأجهزة تلقائياً.</div>
-          <button class="btn primary" style="margin-top:12px" data-act="syncChoose">اختيار مجلد المزامنة</button>`
-        : `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span class="chip ${Sync.status === 'on' ? 'green' : 'amber'}">${Sync.status === 'on' ? 'تعمل ✓' : Sync.status === 'paused' ? 'بانتظار التفعيل' : 'متوقفة'}</span>
-            <span class="muted">المجلد: ${esc(Sync.dir?.name || '')}${Sync.lastOk ? ' · آخر مزامنة: ' + Sync.lastOk.toLocaleTimeString('ar-SA-u-nu-latn', { timeStyle: 'short' }) : ''}</span>
-            <span class="spacer" style="flex:1"></span>
-            ${Sync.status === 'on' ? '<button class="btn sm" data-act="syncNow">مزامنة الآن</button>' : '<button class="btn sm primary" data-act="syncResume">تفعيل</button>'}
-            <button class="btn sm" data-act="syncChoose">تغيير المجلد</button>
-            <button class="btn sm danger" data-act="syncStop">إيقاف المزامنة</button></div>
-          <div class="muted" style="margin-top:8px">عند فتح التطبيق قد يطلب المتصفح الموافقة على الوصول للمجلد؛ اختاري «السماح في كل زيارة» حتى لا يتكرر الطلب.</div>`}
-      </div>` : ''}
+      ${Sync.supported() ? syncCard() : ''}
       <div class="card" style="grid-column:1/-1"><h3>💌 رسالة الشكر للحضور المبكر</h3><div class="form">
         <div class="field full"><label>عنوان الرسالة</label><input class="input" value="${esc(s.earlySubject)}" data-change="setting" data-id="earlySubject"></div>
         <div class="field full"><label>نص الرسالة</label><textarea class="input" rows="8" data-change="setting" data-id="earlyBody">${esc(s.earlyBody)}</textarea>
@@ -1565,9 +1636,10 @@ const ACTIONS = {
   openDataFolder: () => api.openDataFolder(),
 
   syncChoose: () => Sync.choose(),
+  syncCloud: (el) => Sync.choose(el.dataset.id),
   syncResume: () => Sync.resume(),
   syncNow: async () => { await Sync.check(); toast(Sync.conflict ? 'توجد بيانات أحدث من جهاز آخر' : 'تمت المزامنة ✓', Sync.conflict ? '' : 'ok'); render(); },
-  syncStop: () => confirmBox('إيقاف المزامنة على هذا الجهاز؟ تبقى البيانات محفوظة هنا وفي المجلد.', () => Sync.stop(), 'نعم، أوقفيها'),
+  syncStop: () => confirmBox('إيقاف المزامنة على هذا الجهاز؟ تبقى البيانات محفوظة هنا وفي السحابة، ولن تُفعَّل تلقائياً مرة أخرى حتى تفعّليها من الإعدادات.', () => Sync.stop(), 'نعم، أوقفيها'),
   syncUseRemote: () => Sync.load(Sync.conflict),
   syncUseLocal: async () => { await Sync.setBase(Sync.conflict.meta?.updatedAt || 0); Sync.conflict = null; db.meta = { ...(db.meta || {}), updatedAt: Date.now(), device: deviceId() }; await api.save(db); await Sync.push(true); toast('تم حفظ بيانات هذا الجهاز في المجلد', 'ok'); render(); },
   libNew: (el) => openLib(null, el.dataset.id),

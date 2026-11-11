@@ -11,5 +11,16 @@ contextBridge.exposeInMainWorld('madrasaNative', {
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: (url) => ipcRenderer.invoke('update:install', url),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
+  sync: {
+    detect: () => ipcRenderer.invoke('sync:detect'),
+    setRoot: (base) => ipcRenderer.invoke('sync:setRoot', base),
+    pick: () => ipcRenderer.invoke('sync:pick'),
+    clear: () => ipcRenderer.invoke('sync:clear'),
+    readText: (rel) => ipcRenderer.invoke('sync:readText', rel),
+    writeText: (rel, text) => ipcRenderer.invoke('sync:writeText', rel, text),
+    readBin: (rel) => ipcRenderer.invoke('sync:readBin', rel),
+    writeBin: (rel, data) => ipcRenderer.invoke('sync:writeBin', rel, data),
+    list: (rel) => ipcRenderer.invoke('sync:list', rel),
+  },
   onFlush: (cb) => ipcRenderer.on('app:flush', () => Promise.resolve(cb()).finally(() => ipcRenderer.send('app:flushed'))),
 });

@@ -1,7 +1,7 @@
 {
   "name": "madrasa-assistant",
   "productName": "Madrasa Assistant",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "المساعد الإداري — تنظيم العمل الإداري في المدرسة",
   "main": "main.js",
   "author": "Khalil",
@@ -29,7 +29,8 @@
       "preload.js",
       "app/**/*",
       "build/icon.ico",
-      "package.json"
+      "package.json",
+      "school.config.json"
     ],
     "asar": true,
     "win": {

@@ -6,3 +6,6 @@ report/
 build-log.txt
 check-report.json
 *.exe
+
+# إعدادات المدرسة الخاصة (إيميلات) — لا تُرفع إلى GitHub
+school.config.json

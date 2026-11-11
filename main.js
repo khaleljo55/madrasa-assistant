@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, shell, Menu, session, net, dialog } = requi
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { exec } = require('child_process');
+const { exec, execFileSync } = require('child_process');
 
 const APP_ID = 'sa.school.madrasa-assistant';
 const UPDATE_REPO = 'khaleljo55/madrasa-assistant'; // تُنشر ملفات التثبيت الجديدة في Releases بهذا المستودع
@@ -131,10 +131,31 @@ ipcMain.handle('app:version', () => app.getVersion());
 const SYNC_DIRNAME = 'بيانات المساعد الإداري';
 let syncRoot = null; // المسار الوحيد المسموح بالقراءة والكتابة فيه
 const isDir = (p) => { try { return !!p && fs.statSync(p).isDirectory(); } catch { return false; } };
+// قراءة حسابات OneDrive المسجّلة في ويندوز (الإيميل ومجلد كل حساب) من سجل النظام
+function parseOneDriveAccounts(text) {
+  const out = []; let cur = null;
+  for (const line of String(text || '').split(/\r?\n/)) {
+    if (/^HKEY_/i.test(line.trim())) { cur = { key: line.trim() }; out.push(cur); continue; }
+    const m = line.match(/^\s+(\S+)\s+REG_\w+\s+(.*)$/);
+    if (m && cur) cur[m[1]] = m[2].trim();
+  }
+  return out.filter((a) => a.UserEmail && a.UserFolder).map((a) => ({ email: a.UserEmail.trim().toLowerCase(), folder: a.UserFolder.trim(), business: /Business/i.test(a.key) }));
+}
+function oneDriveAccounts() {
+  if (process.platform !== 'win32') return [];
+  try { return parseOneDriveAccounts(execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\OneDrive\\Accounts', '/s'], { encoding: 'utf8', windowsHide: true, timeout: 5000 })); } catch { return []; }
+}
+const samePath = (a, b) => path.resolve(String(a)).toLowerCase() === path.resolve(String(b)).toLowerCase();
 function detectClouds() {
-  const out = [], seen = new Set();
-  const add = (kind, label, base) => { if (isDir(base) && !seen.has(base.toLowerCase())) { seen.add(base.toLowerCase()); out.push({ kind, label, base, path: path.join(base, SYNC_DIRNAME), exists: isDir(path.join(base, SYNC_DIRNAME)) }); } };
+  const out = [], seen = new Set(), accts = oneDriveAccounts();
+  const add = (kind, label, base, email) => {
+    if (!isDir(base) || seen.has(base.toLowerCase())) return;
+    seen.add(base.toLowerCase());
+    const acc = kind === 'onedrive' ? accts.find((a) => samePath(a.folder, base)) : null;
+    out.push({ kind, label, base, email: email || acc?.email || '', path: path.join(base, SYNC_DIRNAME), exists: isDir(path.join(base, SYNC_DIRNAME)) });
+  };
   const env = process.env, home = app.getPath('home');
+  accts.forEach((a) => add('onedrive', a.business ? 'OneDrive (العمل)' : 'OneDrive', a.folder, a.email));
   add('onedrive', 'OneDrive', env.OneDriveConsumer || '');
   add('onedrive', 'OneDrive', env.OneDrive || '');
   add('onedrive', 'OneDrive (العمل)', env.OneDriveCommercial || '');
@@ -146,6 +167,8 @@ function detectClouds() {
   if (!isDir(path.join(home, 'Google Drive', 'My Drive'))) add('gdrive', 'Google Drive', path.join(home, 'Google Drive'));
   return out;
 }
+// إعدادات خاصة بالمدرسة تُضاف إلى ملف التثبيت عند البناء ولا تُرفع إلى GitHub (مثل إيميل حساب المزامنة)
+ipcMain.handle('app:config', () => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'school.config.json'), 'utf8')); } catch { return {}; } });
 function safePath(rel) {
   if (!syncRoot) throw new Error('المزامنة غير مفعّلة');
   const p = path.resolve(syncRoot, String(rel));
@@ -153,6 +176,7 @@ function safePath(rel) {
   return p;
 }
 ipcMain.handle('sync:detect', () => detectClouds());
+module.exports = { parseOneDriveAccounts };
 ipcMain.handle('sync:setRoot', (_e, base) => {
   // يُقبل فقط مجلد سحابة مكتشف على هذا الجهاز أو مجلد اختاره المستخدم بنفسه من نافذة الاختيار
   const ok = detectClouds().some((c) => c.base === base) || pickedBases.has(base) || isDir(path.join(String(base), SYNC_DIRNAME));

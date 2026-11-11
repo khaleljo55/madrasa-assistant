@@ -152,7 +152,10 @@ const SyncFS = {
 };
 const CLOUD_ICON = { onedrive: '☁️', gdrive: '🟢', custom: '📁' };
 const Sync = {
-  dir: null, cfg: null, status: 'off', base: 0, known: null, busy: false, conflict: null, clouds: [],
+  dir: null, cfg: null, status: 'off', base: 0, known: null, busy: false, conflict: null, clouds: [], appCfg: {}, mismatch: null,
+  // الإيميل المطلوب للمزامنة: من الإعدادات، أو من ملف إعداد المدرسة المرفق بالبرنامج
+  wantEmail() { return String(db?.settings?.syncEmail || this.appCfg.syncEmail || '').trim().toLowerCase(); },
+  emailOk(c) { const w = this.wantEmail(); return !w || (c && c.email && c.email.toLowerCase() === w); },
   supported: () => !!NSync || (!window.api && typeof window.showDirectoryPicker === 'function'),
   get fs() { return this.cfg ? SyncFS.native : SyncFS.fsa; },
   get label() { return this.cfg ? `${this.cfg.label}` : this.dir?.name || ''; },
@@ -162,13 +165,21 @@ const Sync = {
     try {
       this.base = (await IDB.get('kv', 'syncBase')) || 0;
       if (NSync) {
+        this.status = 'off'; this.mismatch = null;
+        try { this.appCfg = (await window.madrasaNative.appConfig?.()) || {}; } catch { this.appCfg = {}; }
         this.clouds = await NSync.detect();
+        const want = this.wantEmail();
         const cfg = await IDB.get('kv', 'syncNative');
-        if (cfg) await this.connect(cfg, false);
-        else if (!(await IDB.get('kv', 'syncAutoOff'))) {
-          // أول تشغيل: تفعيل تلقائي عبر OneDrive (أو Google Drive) إن وُجد على الجهاز
-          const c = this.clouds.find((x) => x.kind === 'onedrive') || this.clouds[0];
-          if (c) await this.connect({ base: c.base, kind: c.kind, label: c.label }, true);
+        if (cfg) {
+          // نتحقق في كل تشغيل أن المجلد ما زال لحساب الإيميل المطلوب
+          const c = this.clouds.find((x) => x.base === cfg.base);
+          if (want && !this.emailOk(c)) { this.cfg = cfg; this.status = 'mismatch'; this.mismatch = { found: c?.email || '' }; await NSync.clear(); }
+          else await this.connect({ ...cfg, email: c?.email || cfg.email || '' }, false);
+        } else if (!(await IDB.get('kv', 'syncAutoOff'))) {
+          // أول تشغيل: تفعيل تلقائي عبر OneDrive المسجّل بالإيميل المطلوب (أو أول سحابة إن لم يُحدَّد إيميل)
+          const c = want ? this.clouds.find((x) => x.kind === 'onedrive' && this.emailOk(x)) : this.clouds.find((x) => x.kind === 'onedrive') || this.clouds[0];
+          if (c) await this.connect({ base: c.base, kind: c.kind, label: c.label, email: c.email }, true);
+          else if (want) { this.status = 'mismatch'; this.mismatch = { found: this.clouds.filter((x) => x.kind === 'onedrive').map((x) => x.email).filter(Boolean).join('، ') }; }
         }
       } else {
         this.dir = await IDB.get('kv', 'syncDir');
@@ -186,7 +197,7 @@ const Sync = {
     const r = await NSync.setRoot(cfg.base);
     if (!r?.ok) { this.cfg = cfg; this.status = 'error'; this.error = r?.error || ''; return; }
     this.cfg = { ...cfg, path: r.path }; this.status = 'on'; this.known = null;
-    await IDB.put('kv', 'syncNative', { base: cfg.base, kind: cfg.kind, label: cfg.label });
+    await IDB.put('kv', 'syncNative', { base: cfg.base, kind: cfg.kind, label: cfg.label, email: cfg.email || '' });
     await IDB.del('kv', 'syncAutoOff').catch(() => { });
     if (!first) return this.reconcile();
     const remote = await this.readRemote();
@@ -253,7 +264,9 @@ const Sync = {
     if (NSync) {
       if (!base) { base = await NSync.pick(); if (!base) return; }
       const c = this.clouds.find((x) => x.base === base);
-      return this.connect({ base, kind: c?.kind || 'custom', label: c?.label || base.split(/[\\/]/).pop() || base }, true);
+      const go = () => this.connect({ base, kind: c?.kind || 'custom', label: c?.label || base.split(/[\\/]/).pop() || base, email: c?.email || '' }, true);
+      if (!this.emailOk(c)) return confirmBox(`هذا المجلد ${c?.email ? `لحساب ${c.email}` : 'غير مرتبط بحساب معروف'} وليس للحساب المطلوب ${this.wantEmail()}. هل تريدين المزامنة معه رغم ذلك؟`, go, 'نعم، تابعي');
+      return go();
     }
     let root;
     try { root = await window.showDirectoryPicker({ id: 'madrasa-sync', mode: 'readwrite' }); } catch { return; }
@@ -284,25 +297,35 @@ function deviceId() {
   try { id = localStorage.getItem('madrasa-device'); if (!id) { id = uid(); localStorage.setItem('madrasa-device', id); } } catch { }
   return id;
 }
+function syncEmailField() {
+  const w = Sync.wantEmail();
+  return `<div class="field" style="margin-top:12px;max-width:420px"><label>الحساب المطلوب للمزامنة (إيميل OneDrive)</label>
+    <input class="input" dir="ltr" type="email" value="${esc(db.settings.syncEmail || Sync.appCfg.syncEmail || '')}" placeholder="name@hotmail.com" data-change="syncEmail">
+    <span class="hint">لا تعمل المزامنة إلا إذا كان OneDrive على الجهاز مسجّلاً بهذا الإيميل.${!db.settings.syncEmail && Sync.appCfg.syncEmail ? ' (مضبوط من ملف إعداد البرنامج)' : ''}${!w ? ' اتركيه فارغاً للمزامنة مع أي حساب.' : ''}</span></div>`;
+}
 function syncCard() {
   const last = Sync.lastOk ? ' · آخر مزامنة: ' + Sync.lastOk.toLocaleTimeString('ar-SA-u-nu-latn', { timeStyle: 'short' }) : '';
   if (NSync) {
     const C = Sync.clouds || [];
+    if (Sync.status === 'mismatch') return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
+      <div><span class="chip red">متوقفة — حساب غير مطابق</span></div>
+      <div class="muted" style="margin-top:8px">الحسابات المسجّلة في OneDrive على هذا الجهاز: <b dir="ltr">${esc(C.filter((c) => c.kind === 'onedrive').map((c) => c.email || '—').join('، ') || 'لا يوجد')}</b><br>سجّلي الدخول إلى OneDrive بالحساب المطلوب (أيقونة السحابة بجانب الساعة ← الإعدادات ← الحساب ← إضافة حساب)، ثم اضغطي «إعادة الفحص».</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn primary sm" data-act="syncRecheck">إعادة الفحص</button>${C.map((c) => `<button class="btn sm" data-act="syncCloud" data-id="${esc(c.base)}">المزامنة مع ${esc(c.label)}${c.email ? ` (${esc(c.email)})` : ''} رغم ذلك</button>`).join('')}</div>${syncEmailField()}</div>`;
     if (Sync.status === 'off') return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
       ${C.length ? `<div class="muted">اضغطي على السحابة المسجّلة على هذا الجهاز، فتعمل المزامنة فوراً دون اختيار أي مجلد. على الجهاز الآخر تُفعَّل تلقائياً إذا كان مسجّلاً بالحساب نفسه.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${C.map((c) => `<button class="btn primary" data-act="syncCloud" data-id="${esc(c.base)}">${CLOUD_ICON[c.kind] || '☁️'} تفعيل عبر ${esc(c.label)}</button>`).join('')}<button class="btn" data-act="syncChoose">📁 مجلد آخر</button></div>`
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${C.map((c) => `<button class="btn ${Sync.emailOk(c) ? 'primary' : ''}" data-act="syncCloud" data-id="${esc(c.base)}">${CLOUD_ICON[c.kind] || '☁️'} تفعيل عبر ${esc(c.label)}${c.email ? ` <span dir="ltr" style="opacity:.8">(${esc(c.email)})</span>` : ''}</button>`).join('')}<button class="btn" data-act="syncChoose">📁 مجلد آخر</button></div>`
       : `<div class="muted">لم يُعثر على OneDrive أو Google Drive على هذا الجهاز. سجّلي الدخول إلى OneDrive (أيقونة السحابة بجانب الساعة) ثم أعيدي فتح البرنامج، فتعمل المزامنة تلقائياً.</div>
-        <button class="btn" style="margin-top:12px" data-act="syncChoose">📁 اختيار مجلد يدوياً</button>`}</div>`;
+        <button class="btn" style="margin-top:12px" data-act="syncChoose">📁 اختيار مجلد يدوياً</button>`}${syncEmailField()}</div>`;
     return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="chip ${Sync.status === 'on' ? 'green' : 'red'}">${Sync.status === 'on' ? 'تعمل تلقائياً ✓' : 'متوقفة'}</span>
-        <span>${CLOUD_ICON[Sync.cfg?.kind] || '☁️'} <b>${esc(Sync.label)}</b></span><span class="muted">${last}</span>
+        <span>${CLOUD_ICON[Sync.cfg?.kind] || '☁️'} <b>${esc(Sync.label)}</b>${Sync.cfg?.email ? ` · <span dir="ltr">${esc(Sync.cfg.email)}</span>` : ''}</span><span class="muted">${last}</span>
         <span class="spacer" style="flex:1"></span>
         ${Sync.status === 'on' ? '<button class="btn sm" data-act="syncNow">مزامنة الآن</button>' : '<button class="btn sm primary" data-act="syncResume">إعادة المحاولة</button>'}
         ${C.filter((c) => c.base !== Sync.cfg?.base).map((c) => `<button class="btn sm" data-act="syncCloud" data-id="${esc(c.base)}">التبديل إلى ${esc(c.label)}</button>`).join('')}
         <button class="btn sm danger" data-act="syncStop">إيقاف المزامنة</button></div>
       <div class="muted" style="margin-top:8px;font-size:12px" dir="auto">مكان الحفظ: ${esc(Sync.cfg?.path || '')}</div>
-      <div class="muted" style="margin-top:4px">تُحفظ البيانات والمرفقات في حسابكِ على السحابة باستمرار، وتنتقل إلى أي جهاز آخر مسجّل بالحساب نفسه ومثبّت عليه البرنامج.</div></div>`;
+      <div class="muted" style="margin-top:4px">تُحفظ البيانات والمرفقات في حسابكِ على السحابة باستمرار، وتنتقل إلى أي جهاز آخر مسجّل بالحساب نفسه ومثبّت عليه البرنامج.</div>${syncEmailField()}</div>`;
   }
   return `<div class="card" style="grid-column:1/-1"><h3>🔄 المزامنة بين الأجهزة</h3>
     ${Sync.status === 'off' ? `<div class="muted">لاستخدام التطبيق من أكثر من جهاز: اختاري مجلداً داخل <b>OneDrive</b> أو <b>Google Drive</b>، وكرّري الأمر نفسه على الجهاز الآخر واختاري المجلد ذاته. بعدها تنتقل البيانات والمرفقات بين الأجهزة تلقائياً.</div>
@@ -324,6 +347,9 @@ function renderSyncBar() {
     const when = c.meta?.updatedAt ? new Date(c.meta.updatedAt).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '';
     el.innerHTML = `<div class="banner" style="margin:0 28px 10px"><span class="big">🔄</span><div><b>توجد بيانات أحدث محفوظة من جهاز آخر</b><div class="muted">آخر تعديل عليها: ${when}. اختاري أي نسخة تريدين الاحتفاظ بها.</div></div><span class="spacer"></span>
       <button class="btn primary" data-act="syncUseRemote">تحميل بيانات الجهاز الآخر</button><button class="btn" data-act="syncUseLocal">الاحتفاظ ببيانات هذا الجهاز</button></div>`;
+  } else if (Sync.status === 'mismatch') {
+    const f = Sync.mismatch?.found;
+    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>🔒</span><div><b>المزامنة متوقفة لحماية البيانات</b><div class="muted">${f ? `OneDrive على هذا الجهاز مسجّل بحساب <span dir="ltr">${esc(f)}</span>` : 'لا يوجد OneDrive مسجّل على هذا الجهاز'}، والحساب المطلوب <span dir="ltr">${esc(Sync.wantEmail())}</span>. سجّلي الدخول إلى OneDrive بالحساب المطلوب ثم اضغطي «إعادة الفحص».</div></div><span class="spacer"></span><button class="btn sm primary" data-act="syncRecheck">إعادة الفحص</button><button class="btn sm" data-act="nav" data-id="settings">الإعدادات</button></div>`;
   } else if (Sync.status === 'paused') {
     el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span>🔄</span><div>المزامنة بانتظار موافقتكِ</div><span class="spacer"></span><button class="btn sm primary" data-act="syncResume">تفعيل المزامنة</button></div>`;
   } else if (Sync.status === 'error') {
@@ -1637,6 +1663,7 @@ const ACTIONS = {
 
   syncChoose: () => Sync.choose(),
   syncCloud: (el) => Sync.choose(el.dataset.id),
+  syncRecheck: async () => { await IDB.del('kv', 'syncAutoOff').catch(() => { }); await Sync.init(); render(); toast(Sync.status === 'on' ? 'المزامنة تعمل ✓' : 'ما زال الحساب غير مطابق', Sync.status === 'on' ? 'ok' : ''); },
   syncResume: () => Sync.resume(),
   syncNow: async () => { await Sync.check(); toast(Sync.conflict ? 'توجد بيانات أحدث من جهاز آخر' : 'تمت المزامنة ✓', Sync.conflict ? '' : 'ok'); render(); },
   syncStop: () => confirmBox('إيقاف المزامنة على هذا الجهاز؟ تبقى البيانات محفوظة هنا وفي السحابة، ولن تُفعَّل تلقائياً مرة أخرى حتى تفعّليها من الإعدادات.', () => Sync.stop(), 'نعم، أوقفيها'),
@@ -1654,6 +1681,12 @@ const ACTIONS = {
 };
 
 const CHANGES = {
+  syncEmail: async (el) => {
+    const v = el.value.trim();
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return toast('الإيميل غير صحيح', 'err');
+    db.settings.syncEmail = v; commit(false);
+    if (NSync) { await Sync.init(); render(); toast(v ? `المزامنة مقصورة على ${v}` : 'المزامنة مع أي حساب', 'ok'); }
+  },
   ...TH_CHANGES,
   navShow: (el) => { const h = new Set(db.settings.hidden || []); el.checked ? h.delete(el.dataset.id) : h.add(el.dataset.id); db.settings.hidden = [...h]; commit(); toast(el.checked ? 'أُظهر القسم في القائمة' : 'أُخفي القسم من القائمة', 'ok'); },
   libCat: (el) => { ui.libCat = el.value; render(); },

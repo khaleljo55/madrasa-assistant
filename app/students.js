@@ -19,6 +19,7 @@ const SL_TYPES = {
   behavior: { l: 'ملاحظة سلوكية', ic: '⚠️', cls: 'amber' },
   hifz: { l: 'حفظ ومراجعة', ic: '📖', cls: 'brand' },
   note: { l: 'ملاحظة عامة', ic: '📝', cls: '' },
+  leave: { l: 'استئذان وخروج', ic: '🚪', cls: 'blue' },
 };
 const ATT = [['present', 'حاضرة', 'green'], ['absent', 'غائبة', 'red'], ['late', 'متأخرة', 'amber'], ['excused', 'بعذر', 'blue']];
 const STU_FIELDS = [
@@ -36,7 +37,7 @@ const sClass = (s) => [s.grade, s.cls].filter(Boolean).join(' / ') || 'بدون 
 const sClasses = () => [...new Set(db.students.map(sClass))].sort((a, b) => a.localeCompare(b, 'ar', { numeric: true }));
 const sYear = () => (typeof yearRange === 'function' ? yearRange() : ['0000-00-00', '9999-12-31']);
 function sLog(id, inYear = true) { const [ys, ye] = sYear(); return db.studentLog.filter((e) => e.studentId === id && (!inYear || (e.date >= ys && e.date <= ye))); }
-function sCounts(id) { const c = { absent: 0, late: 0, excused: 0, achieve: 0, behavior: 0, hifz: 0, note: 0 }; sLog(id).forEach((e) => c[e.type]++); return c; }
+function sCounts(id) { const c = { absent: 0, late: 0, excused: 0, achieve: 0, behavior: 0, hifz: 0, note: 0, leave: 0 }; sLog(id).forEach((e) => c[e.type]++); return c; }
 const attOf = (id, d) => db.studentLog.find((e) => e.studentId === id && e.date === d && ['absent', 'late', 'excused'].includes(e.type));
 const sFill = (tpl, s, extra = {}) => String(tpl).replace(/\{الاسم\}/g, s.name).replace(/\{الفصل\}/g, sClass(s)).replace(/\{ولي الأمر\}/g, s.guardian || 'ولي الأمر الكريم').replace(/\{المدرسة\}/g, db.settings.schoolName || 'المدرسة').replace(/\{التاريخ\}/g, extra.date ? `${dayName(extra.date)} ${fmtH(extra.date)}` : '').replace(/\{الحالة\}/g, extra.state || '').replace(/\{السبب\}/g, extra.reason || '');
 const STU_MSG = {
@@ -101,8 +102,8 @@ VIEWS.students = {
   actions: () => `<button class="btn" data-act="stuExport">⬇ Excel</button><button class="btn" data-act="stuImport">⬆ استيراد Excel</button><button class="btn primary" data-act="stuAdd">＋ طالبة</button>`,
   render() {
     const tab = ui.stuTab || 'list';
-    return `<div class="seg" style="margin-bottom:14px">${[['list', '📋 القائمة'], ['att', '🗓️ الغياب اليومي'], ['honor', '🏅 التميز والشكر']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="stuTab" data-id="${k}">${l}</button>`).join('')}</div>
-      ${tab === 'att' ? stuAttendance() : tab === 'honor' ? stuHonors() : stuList()}`;
+    return `<div class="seg" style="margin-bottom:14px">${[['list', '📋 القائمة'], ['att', '🗓️ الغياب اليومي'], ['leave', '🚪 الاستئذان'], ['honor', '🏅 التميز والشكر']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="stuTab" data-id="${k}">${l}</button>`).join('')}</div>
+      ${tab === 'att' ? stuAttendance() : tab === 'leave' ? stuLeaves() : tab === 'honor' ? stuHonors() : stuList()}`;
   },
 };
 
@@ -341,3 +342,41 @@ stFromApp = function (kind) {
   if (kind === 'stuAbs') return ['غياب الطالبات حسب الفصل (هذا العام)', [['الفصل', 'غياب', 'تأخر'], ...classes.map((c) => { const ids = new Set(db.students.filter((s) => sClass(s) === c).map((s) => s.id)); const L = db.studentLog.filter((e) => ids.has(e.studentId) && inY(e)); return [c, L.filter((e) => e.type === 'absent').length, L.filter((e) => e.type === 'late').length]; })], 'column'];
   return ['تميز الطالبات حسب الفصل (هذا العام)', [['الفصل', 'حالات التميز'], ...count((s) => db.studentLog.filter((e) => e.studentId === s.id && e.type === 'achieve' && inY(e)).length)], 'bar'];
 };
+
+// ───── 🚪 استئذان الطالبات وخروجهن (1.0.8) ─────
+function stuLeaves() {
+  const d = ui.leaveDate || todayISO();
+  const list = db.studentLog.filter((e) => e.type === 'leave' && e.date === d).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  return `<div class="toolbar"><label class="muted">اليوم</label><input type="date" class="input" value="${d}" data-change="leaveDate" style="width:auto"><span class="spacer" style="flex:1"></span>
+      <span class="chip blue">استئذان اليوم: ${list.length}</span><button class="btn primary" data-act="leaveNew">🚪 تسجيل استئذان</button></div>
+    ${list.length ? `<div class="card" style="padding:0;overflow:auto"><table class="table"><thead><tr><th>الوقت</th><th>الطالبة</th><th>الفصل</th><th>المستلم</th><th>السبب</th><th></th></tr></thead><tbody>
+      ${list.map((e) => { const s = student(e.studentId); return s ? `<tr><td dir="ltr" style="text-align:right">${esc(e.time || '')}</td><td><a href="#" class="link" data-act="stuOpen" data-id="${s.id}"><b>${esc(s.name)}</b></a></td><td>${esc(sClass(s))}</td><td>${esc(e.receiver || '')}${e.relation ? ` <span class="muted">(${esc(e.relation)})</span>` : ''}</td><td>${esc(e.text || '')}</td>
+        <td class="actions"><button class="btn sm" data-act="leaveSlip" data-id="${e.id}">🖨 قسيمة</button><button class="icon-btn" data-act="stuLogDel" data-id="${e.id}">🗑️</button></td></tr>` : ''; }).join('')}</tbody></table></div>`
+      : `<div class="card">${emptyState('🚪', 'لا يوجد استئذان مسجّل في هذا اليوم.<br>سجّلي خروج الطالبة مع ولي أمرها، واطبعي قسيمة الخروج بضغطة.')}</div>`}`;
+}
+function leaveSlip(e) {
+  const s = student(e.studentId), school = db.settings.schoolName || '';
+  const one = (copy) => `<div class="slip"><div style="display:flex;justify-content:space-between"><b>${esc(school)}</b><span>${copy}</span></div>
+    <h2 style="text-align:center;margin:8px 0">قسيمة خروج طالبة</h2>
+    <table><tbody><tr><td style="width:28%"><b>اسم الطالبة</b></td><td>${esc(s.name)}</td></tr><tr><td><b>الفصل</b></td><td>${esc(sClass(s))}</td></tr>
+    <tr><td><b>اليوم والتاريخ</b></td><td>${dayName(e.date)} ${fmtH(e.date)}</td></tr><tr><td><b>وقت الخروج</b></td><td>${esc(e.time || '')}</td></tr>
+    <tr><td><b>المستلم</b></td><td>${esc(e.receiver || '')}${e.relation ? ` (${esc(e.relation)})` : ''}${e.receiverId ? ` — هوية: ${esc(e.receiverId)}` : ''}</td></tr><tr><td><b>السبب</b></td><td>${esc(e.text || '')}</td></tr></tbody></table>
+    <table class="noborder" style="width:100%;margin-top:10px"><tbody><tr><td style="text-align:center">توقيع المستلم<br><br>.................</td><td style="text-align:center">${esc(db.settings.signerTitle || 'المساعد الإداري')}<br><br>.................</td></tr></tbody></table></div>`;
+  printDoc(`قسيمة خروج — ${s.name}`, `${one('نسخة المدرسة')}<div style="border-top:2px dashed #999;margin:18px 0"></div>${one('نسخة البوابة')}`);
+}
+const nowHM = () => new Date().toTimeString().slice(0, 5);
+Object.assign(ACTIONS, {
+  leaveNew: () => {
+    if (!db.students.length) return toast('أضيفي الطالبات أولاً');
+    formModal({ title: '🚪 تسجيل استئذان طالبة', wide: true, fields: [
+      { key: 'sid', label: 'الطالبة', type: 'select', full: true, options: db.students.slice().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map((s) => [s.id, `${s.name} — ${sClass(s)}`]) },
+      { key: 'time', label: 'وقت الخروج', type: 'time' }, { key: 'date', label: 'التاريخ', type: 'date' },
+      { key: 'receiver', label: 'اسم المستلم', type: 'text', required: true }, { key: 'relation', label: 'صلة القرابة', type: 'select', options: ['الأب', 'الأم', 'الأخ', 'الأخت', 'السائق', 'أخرى'] },
+      { key: 'receiverId', label: 'رقم هوية المستلم (اختياري)', type: 'text' }, { key: 'text', label: 'سبب الاستئذان', type: 'text', full: true, list: ['موعد طبي', 'ظرف عائلي', 'مرض', 'سفر'] },
+      { key: 'print', label: 'طباعة قسيمة الخروج بعد الحفظ', type: 'checkbox', full: true }],
+      values: { date: ui.leaveDate || todayISO(), time: nowHM(), relation: 'الأب', print: true },
+      onSave: (v) => { const e = { id: uid(), studentId: v.sid, date: v.date, type: 'leave', time: v.time, receiver: v.receiver, relation: v.relation, receiverId: v.receiverId, text: v.text }; db.studentLog.push(e); commit(); toast('سُجّل الاستئذان', 'ok'); if (v.print) setTimeout(() => leaveSlip(e), 80); } });
+  },
+  leaveSlip: (el) => leaveSlip(db.studentLog.find((e) => e.id === el.dataset.id)),
+});
+CHANGES.leaveDate = (el) => { if (el.value) { ui.leaveDate = el.value; render(); } };

@@ -537,3 +537,17 @@ a.link { text-decoration: none; }
 .kit-file:hover { border-color: var(--brand); box-shadow: var(--shadow); }
 .kit-file span { font-size: 26px; } .kit-file small { color: var(--muted); font-size: 12px; }
 @media (max-width: 800px) { .kit-files { grid-template-columns: repeat(2, 1fr); } }
+
+/* ═══ 1.0.8: الانتظار، النشرة، الاستئذان، الطابور والإذاعة ═══ */
+tr.sub-open td { background: #fffaf0; }
+.bulletin { box-shadow: none; padding: 20px 30px; min-height: 0; max-height: 62vh; overflow: auto; }
+.slip { border: 1.5px solid #333; border-radius: 8px; padding: 12px 16px; }
+.as-run { display: flex; flex-direction: column; }
+.as-seg { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px dashed var(--line); }
+.as-seg.end { border-bottom: none; }
+.as-time { font-weight: 700; color: var(--brand); min-width: 52px; font-variant-numeric: tabular-nums; }
+.as-radio { padding: 12px 14px; border-radius: 12px; background: var(--brand-soft); }
+.as-score button { min-width: 38px; }
+.as-setup { display: flex; flex-direction: column; gap: 8px; }
+.as-srow { display: flex; align-items: center; gap: 8px; }
+.as-srow .input:first-of-type { flex: 1; }

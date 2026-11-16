@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('madrasaNative', {
   showInFolder: (p) => ipcRenderer.invoke('show:folder', p),
   appVersion: () => ipcRenderer.invoke('app:version'),
   appConfig: () => ipcRenderer.invoke('app:config'),
+  focus: () => ipcRenderer.invoke('app:focus'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: (url) => ipcRenderer.invoke('update:install', url),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),

@@ -205,6 +205,7 @@ ipcMain.handle('backup:daily', (_e, day, text) => {
 });
 ipcMain.handle('backup:open', () => { const d = lastBackupDir || backupTargets()[0]; fs.mkdirSync(d, { recursive: true }); shell.openPath(d); return d; });
 ipcMain.handle('backup:targets', () => backupTargets());
+ipcMain.handle('app:focus', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } return true; });
 module.exports = { parseOneDriveAccounts };
 ipcMain.handle('sync:setRoot', (_e, base) => {
   // يُقبل فقط مجلد سحابة مكتشف على هذا الجهاز أو مجلد اختاره المستخدم بنفسه من نافذة الاختيار

@@ -23,5 +23,10 @@ contextBridge.exposeInMainWorld('madrasaNative', {
     writeBin: (rel, data) => ipcRenderer.invoke('sync:writeBin', rel, data),
     list: (rel) => ipcRenderer.invoke('sync:list', rel),
   },
+  backup: {
+    daily: (day, text) => ipcRenderer.invoke('backup:daily', day, text),
+    open: () => ipcRenderer.invoke('backup:open'),
+    targets: () => ipcRenderer.invoke('backup:targets'),
+  },
   onFlush: (cb) => ipcRenderer.on('app:flush', () => Promise.resolve(cb()).finally(() => ipcRenderer.send('app:flushed'))),
 });

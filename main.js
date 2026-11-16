@@ -91,7 +91,7 @@ function runSmokeTest(outDir) {
       try {
         const res = await win.webContents.executeJavaScript(`(async () => {
           const out = { title: document.title, navItems: document.querySelectorAll('.nav-item').length, hasDb: typeof db === 'object' && !!db };
-          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','teachers','timetable','absence','entries','duties','break','occasions','visits','library','quran','tools','settings'];
+          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','teachers','students','csManage','timetable','absence','entries','duties','break','occasions','visits','library','quran','tools','settings'];
           out.views = {};
           for (const v of views) { try { go(v); await new Promise(r => setTimeout(r, 150)); out.views[v] = document.querySelector('#view').innerHTML.length > 50; } catch (e) { out.views[v] = 'ERR ' + e.message; } }
           go('dashboard');
@@ -176,6 +176,35 @@ function safePath(rel) {
   return p;
 }
 ipcMain.handle('sync:detect', () => detectClouds());
+// ─── النسخة الاحتياطية اليومية ───
+// تُكتب في مجلد المزامنة (OneDrive للحساب المعتمد) وفي Google Drive إن وُجد، وإلا في «المستندات». يُحتفظ بآخر 30 نسخة.
+const BK_RE = /^نسخة-\d{4}-\d{2}-\d{2}\.json$/;
+let lastBackupDir = null;
+function backupTargets() {
+  const t = [];
+  if (syncRoot) t.push(path.join(syncRoot, 'النسخ الاحتياطية'));
+  const g = detectClouds().find((c) => c.kind === 'gdrive' && !(syncRoot && syncRoot.toLowerCase().startsWith(c.base.toLowerCase())));
+  if (g) t.push(path.join(g.base, 'نسخ المساعد الإداري الاحتياطية'));
+  if (!t.length) t.push(path.join(app.getPath('documents'), 'المساعد الإداري', 'النسخ الاحتياطية'));
+  return t;
+}
+ipcMain.handle('backup:daily', (_e, day, text) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day))) return { ok: false, error: 'تاريخ غير صحيح' };
+  const done = [], errors = [];
+  for (const dir of backupTargets()) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const f = path.join(dir, `نسخة-${day}.json`);
+      fs.writeFileSync(f + '.tmp', String(text)); fs.renameSync(f + '.tmp', f);
+      const old = fs.readdirSync(dir).filter((n) => BK_RE.test(n)).sort().reverse().slice(30);
+      old.forEach((n) => { try { fs.unlinkSync(path.join(dir, n)); } catch { } });
+      done.push(dir); lastBackupDir = dir;
+    } catch (e) { errors.push(dir + ': ' + e.message); }
+  }
+  return { ok: done.length > 0, dirs: done, error: errors.join(' | ') };
+});
+ipcMain.handle('backup:open', () => { const d = lastBackupDir || backupTargets()[0]; fs.mkdirSync(d, { recursive: true }); shell.openPath(d); return d; });
+ipcMain.handle('backup:targets', () => backupTargets());
 module.exports = { parseOneDriveAccounts };
 ipcMain.handle('sync:setRoot', (_e, base) => {
   // يُقبل فقط مجلد سحابة مكتشف على هذا الجهاز أو مجلد اختاره المستخدم بنفسه من نافذة الاختيار

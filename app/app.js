@@ -61,6 +61,11 @@ function openBlob(blob, name, download) {
   else window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+// كل العناصر التي تحمل مرفقات (للنسخ الاحتياطي والمزامنة)
+function attItems(d) {
+  const custom = (d.customSections || []).flatMap((s) => s.records.flatMap((r) => s.fields.filter((f) => f.type === 'file' && r.values[f.id]?.stored).map((f) => ({ file: r.values[f.id] }))));
+  return [...(d.library || []), ...(d.correspondence || []), ...custom];
+}
 const api = window.api || {
   isDesktop: false,
   load: async () => {
@@ -78,7 +83,7 @@ const api = window.api || {
   // النسخة الاحتياطية تشمل البيانات وملفات مكتبة المعرفة
   exportData: async (d) => {
     const files = {};
-    for (const x of [...(d.library || []), ...(d.correspondence || [])]) if (x.file?.stored) { const b = await IDB.get('files', x.file.stored); if (b) files[x.file.stored] = await blobToDataUrl(b); }
+    for (const x of attItems(d)) if (x.file?.stored) { const b = await IDB.get('files', x.file.stored); if (b) files[x.file.stored] = await blobToDataUrl(b); }
     downloadBlob(JSON.stringify({ ...d, _files: files }), `نسخة-احتياطية-المساعد-الإداري-${todayISO()}.json`, 'application/json');
     toast('حُفظت النسخة في مجلد «التنزيلات» — انسخها إلى فلاش أو Drive');
     return false;
@@ -211,7 +216,7 @@ const Sync = {
   async readAttachment(stored) { try { return await this.fs.readBlob('library', stored); } catch { return null; } },
   async pushAttachments() {
     if (!this.known) this.known = new Set(await this.fs.list('library'));
-    for (const x of [...db.library, ...(db.correspondence || [])]) {
+    for (const x of attItems(db)) {
       const st = x.file?.stored;
       if (!st || this.known.has(st)) continue;
       const b = await IDB.get('files', st).catch(() => null);

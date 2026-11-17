@@ -1762,7 +1762,7 @@ function startupNotify() {
   const occ = db.occasions.find((o) => occNextDate(o) === t);
   if (occ) msgs.push(`اليوم: ${occ.name}`);
   const lb = db.settings.lastBackup;
-  if (!api.isDesktop && (db.teachers.length || db.absences.length) && (!lb || diffDays(lb, t) >= 7)) setTimeout(() => toast('💾 مرّ أسبوع على آخر نسخة احتياطية — احفظي نسخة من الإعدادات'), 1500);
+  if (!api.isDesktop && Sync.status !== 'on' && (db.teachers.length || db.absences.length) && (!lb || diffDays(lb, t) >= 7)) setTimeout(() => toast('💾 مرّ أسبوع على آخر نسخة احتياطية — احفظي نسخة من الإعدادات'), 1500);
   if (!msgs.length) return;
   try { if ('Notification' in window && Notification.permission !== 'denied') new Notification('المساعد الإداري', { body: msgs.join(' • ') }); } catch { }
 }

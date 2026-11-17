@@ -9,3 +9,4 @@ check-report.json
 
 # إعدادات المدرسة الخاصة (إيميلات) — لا تُرفع إلى GitHub
 school.config.json
+dist-web/

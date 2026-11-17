@@ -1,0 +1,63 @@
+// بناء نسخة الجوال (تطبيق ويب يُثبَّت على الشاشة الرئيسية) في المجلد dist-web
+// الاستخدام: node web/build-web.js
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(ROOT, 'dist-web');
+const ver = require(path.join(ROOT, 'package.json')).version;
+
+fs.rmSync(OUT, { recursive: true, force: true });
+fs.cpSync(path.join(ROOT, 'app'), OUT, { recursive: true, filter: (p) => !/voice\.html$/.test(p) });
+for (const f of ['config.js', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(__dirname, f), path.join(OUT, f));
+
+// index.html: صلاحيات الاتصال بمايكروسوفت، وبيانات التثبيت على الشاشة الرئيسية
+let html = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8');
+const MS = 'https://login.microsoftonline.com https://graph.microsoft.com https://*.1drv.com https://*.1drv.ms https://*.livefilestore.com https://*.sharepoint.com https://*.files.1drv.com https://*.microsoftpersonalcontent.com https://api.onedrive.com https://*.onedrive.com';
+html = html.replace(/connect-src ([^"]*)"/, (m, v) => `connect-src ${v} ${MS}"`)
+  .replace('width=device-width, initial-scale=1"', 'width=device-width, initial-scale=1, viewport-fit=cover"')
+  .replace('<link rel="icon" href="icon.png">', `<link rel="icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0f6b5c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="المساعد الإداري">
+<meta name="robots" content="noindex, nofollow">`)
+  .replace('<script src="web-sync.js"></script>', '<script src="config.js"></script>\n<script src="web-sync.js"></script>\n<script src="sw-reg.js"></script>');
+if (!html.includes('graph.microsoft.com') || !html.includes('manifest.webmanifest') || !html.includes('config.js')) throw new Error('تعذّر تعديل index.html');
+fs.writeFileSync(path.join(OUT, 'index.html'), html);
+
+fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify({
+  name: 'المساعد الإداري', short_name: 'المساعد الإداري', lang: 'ar', dir: 'rtl',
+  start_url: './', scope: './', display: 'standalone', orientation: 'portrait',
+  background_color: '#f4f6f5', theme_color: '#0f6b5c',
+  icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+}, null, 2));
+
+fs.writeFileSync(path.join(OUT, 'sw-reg.js'), `if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    reg.addEventListener('updatefound', () => { const w = reg.installing; w && w.addEventListener('statechange', () => { if (w.state === 'activated' && navigator.serviceWorker.controller) toast('تم تحديث التطبيق — أعيدي فتحه لتظهر الإضافات الجديدة', 'ok'); }); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
+`);
+fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
+fs.writeFileSync(path.join(OUT, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+// عامل الخدمة: يعمل التطبيق دون إنترنت، ويُحدَّث تلقائياً عند نشر نسخة جديدة
+const files = [];
+(function walk(d, rel) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const r = rel ? `${rel}/${e.name}` : e.name; e.isDirectory() ? walk(path.join(d, e.name), r) : files.push(r); } })(OUT, '');
+const shell = ['./', ...files.filter((f) => !/^(sw\.js|\.nojekyll)$/.test(f))];
+fs.writeFileSync(path.join(OUT, 'sw.js'), `// المساعد الإداري ${ver}
+const CACHE = 'madrasa-${ver}-${Date.now().toString(36)}';
+const SHELL = ${JSON.stringify(shell)};
+self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('fetch', (e) => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.origin !== location.origin) return; // طلبات مايكروسوفت تمر مباشرة
+  if (u.search.includes('code=') || u.search.includes('error=')) return; // العودة من تسجيل الدخول
+  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));
+});
+`);
+console.log(`✓ نسخة الجوال ${ver} جاهزة في dist-web (${files.length + 4} ملفات)`);

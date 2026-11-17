@@ -8,13 +8,11 @@ const ver = require(path.join(ROOT, 'package.json')).version;
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.cpSync(path.join(ROOT, 'app'), OUT, { recursive: true, filter: (p) => !/voice\.html$/.test(p) });
-for (const f of ['config.js', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(__dirname, f), path.join(OUT, f));
+for (const f of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(__dirname, f), path.join(OUT, f));
 
-// index.html: صلاحيات الاتصال بمايكروسوفت، وبيانات التثبيت على الشاشة الرئيسية
+// index.html: بيانات التثبيت على الشاشة الرئيسية
 let html = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8');
-const MS = 'https://login.microsoftonline.com https://graph.microsoft.com https://*.1drv.com https://*.1drv.ms https://*.livefilestore.com https://*.sharepoint.com https://*.files.1drv.com https://*.microsoftpersonalcontent.com https://api.onedrive.com https://*.onedrive.com';
-html = html.replace(/connect-src ([^"]*)"/, (m, v) => `connect-src ${v} ${MS}"`)
-  .replace('width=device-width, initial-scale=1"', 'width=device-width, initial-scale=1, viewport-fit=cover"')
+html = html.replace('width=device-width, initial-scale=1"', 'width=device-width, initial-scale=1, viewport-fit=cover"')
   .replace('<link rel="icon" href="icon.png">', `<link rel="icon" href="icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -24,8 +22,8 @@ html = html.replace(/connect-src ([^"]*)"/, (m, v) => `connect-src ${v} ${MS}"`)
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="المساعد الإداري">
 <meta name="robots" content="noindex, nofollow">`)
-  .replace('<script src="web-sync.js"></script>', '<script src="config.js"></script>\n<script src="web-sync.js"></script>\n<script src="sw-reg.js"></script>');
-if (!html.includes('graph.microsoft.com') || !html.includes('manifest.webmanifest') || !html.includes('config.js')) throw new Error('تعذّر تعديل index.html');
+  .replace('<script src="relay.js"></script>', '<script src="relay.js"></script>\n<script src="sw-reg.js"></script>');
+if (!html.includes('workers.dev') || !html.includes('manifest.webmanifest') || !html.includes('sw-reg.js')) throw new Error('تعذّر تعديل index.html');
 fs.writeFileSync(path.join(OUT, 'index.html'), html);
 
 fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify({
@@ -56,7 +54,6 @@ self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => 
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin) return; // طلبات مايكروسوفت تمر مباشرة
-  if (u.search.includes('code=') || u.search.includes('error=')) return; // العودة من تسجيل الدخول
   e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));
 });
 `);

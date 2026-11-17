@@ -10,3 +10,7 @@ check-report.json
 # إعدادات المدرسة الخاصة (إيميلات) — لا تُرفع إلى GitHub
 school.config.json
 dist-web/
+cloud/wrangler.toml
+cloud/kv-id.txt
+cloud/relay-url.txt
+cloud/.wrangler/

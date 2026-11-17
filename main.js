@@ -185,6 +185,13 @@ let lastBackupDir = null;
 function backupTargets() {
   const t = [];
   if (syncRoot) t.push(path.join(syncRoot, 'النسخ الاحتياطية'));
+  else {
+    // المزامنة المشفّرة لا تستخدم مجلد OneDrive، لكن النسخ اليومية تبقى فيه (حساب المدرسة المعتمد إن وُجد)
+    let want = ''; try { want = String(JSON.parse(fs.readFileSync(path.join(__dirname, 'school.config.json'), 'utf8')).syncEmail || '').toLowerCase(); } catch { }
+    const ods = detectClouds().filter((c) => c.kind === 'onedrive');
+    const od = (want && ods.find((c) => c.email === want)) || (!want && ods[0]);
+    if (od) t.push(path.join(od.base, SYNC_DIRNAME, 'النسخ الاحتياطية'));
+  }
   const g = detectClouds().find((c) => c.kind === 'gdrive' && !(syncRoot && syncRoot.toLowerCase().startsWith(c.base.toLowerCase())));
   if (g) t.push(path.join(g.base, 'نسخ المساعد الإداري الاحتياطية'));
   if (!t.length) t.push(path.join(app.getPath('documents'), 'المساعد الإداري', 'النسخ الاحتياطية'));
@@ -208,6 +215,7 @@ ipcMain.handle('backup:daily', (_e, day, text) => {
 ipcMain.handle('backup:open', () => { const d = lastBackupDir || backupTargets()[0]; fs.mkdirSync(d, { recursive: true }); shell.openPath(d); return d; });
 ipcMain.handle('backup:targets', () => backupTargets());
 require('./sms-main')({ app, ipcMain, net, safeStorage });
+require('./mail-main')({ app, ipcMain, safeStorage, shell });
 ipcMain.handle('app:focus', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } return true; });
 module.exports = { parseOneDriveAccounts };
 ipcMain.handle('sync:setRoot', (_e, base) => {

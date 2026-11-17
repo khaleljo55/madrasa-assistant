@@ -89,11 +89,13 @@ const api = window.api || {
     return false;
   },
   importData: () => new Promise((res) => {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json';
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,.gz';
     inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return res(null);
       try {
-        const d = JSON.parse(await f.text());
+        // النسخ المرسلة بالبريد مضغوطة (.json.gz)
+        const text = /\.gz$/i.test(f.name) ? await new Response(f.stream().pipeThrough(new DecompressionStream('gzip'))).text() : await f.text();
+        const d = JSON.parse(text);
         for (const [k, u] of Object.entries(d._files || {})) await IDB.put('files', k, await dataUrlToBlob(u));
         delete d._files; res(d);
       } catch { res(null); }

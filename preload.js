@@ -36,5 +36,13 @@ contextBridge.exposeInMainWorld('madrasaNative', {
     open: () => ipcRenderer.invoke('backup:open'),
     targets: () => ipcRenderer.invoke('backup:targets'),
   },
+  bkmail: {
+    get: () => ipcRenderer.invoke('bkmail:get'),
+    set: (patch) => ipcRenderer.invoke('bkmail:set', patch),
+    test: () => ipcRenderer.invoke('bkmail:test'),
+    prepare: (day, text, dataOnly) => ipcRenderer.invoke('bkmail:prepare', day, text, dataOnly),
+    reveal: (p) => ipcRenderer.invoke('bkmail:reveal', p),
+    send: (o) => ipcRenderer.invoke('bkmail:send', o),
+  },
   onFlush: (cb) => ipcRenderer.on('app:flush', () => Promise.resolve(cb()).finally(() => ipcRenderer.send('app:flushed'))),
 });

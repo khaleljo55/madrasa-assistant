@@ -551,3 +551,15 @@ tr.sub-open td { background: #fffaf0; }
 .as-setup { display: flex; flex-direction: column; gap: 8px; }
 .as-srow { display: flex; align-items: center; gap: 8px; }
 .as-srow .input:first-of-type { flex: 1; }
+
+/* ═══ 1.0.9: الرسائل النصية، التعاميم، المحاضر، الزوار، الترتيب ═══ */
+.sms-bubble { background: #e9f7ef; border: 1px solid #cfe9da; border-radius: 16px 16px 4px 16px; padding: 10px 14px; white-space: pre-wrap; max-width: 420px; line-height: 1.7; }
+.cir-card .progress { margin-top: 6px; }
+.cir-acks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; max-height: 56vh; overflow: auto; }
+.cir-ack { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; cursor: pointer; background: #fff; }
+.cir-ack.on { border-color: var(--green); background: var(--green-soft); }
+.cir-ack input { accent-color: var(--green); }
+.mt-decs { display: flex; flex-direction: column; gap: 8px; }
+.mt-dec { display: grid; grid-template-columns: 20px minmax(0, 2.2fr) minmax(0, 1fr) 150px auto; gap: 6px; align-items: center; }
+.set-tabs button { white-space: nowrap; }
+.banner.amber { background: var(--amber-soft); }

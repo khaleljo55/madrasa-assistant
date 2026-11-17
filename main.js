@@ -1,6 +1,6 @@
 // المساعد الإداري — البرنامج المثبَّت (Electron)
 // الواجهة كاملة داخل مجلد app وتعمل دون متصفح؛ البيانات محفوظة داخل البرنامج على الجهاز.
-const { app, BrowserWindow, ipcMain, shell, Menu, session, net, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, session, net, dialog, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -91,7 +91,7 @@ function runSmokeTest(outDir) {
       try {
         const res = await win.webContents.executeJavaScript(`(async () => {
           const out = { title: document.title, navItems: document.querySelectorAll('.nav-item').length, hasDb: typeof db === 'object' && !!db };
-          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','teachers','students','csManage','timetable','absence','subs','entries','duties','assembly','break','occasions','visits','library','quran','tools','settings'];
+          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','circulars','meetings','sms','visitors','teachers','students','csManage','timetable','absence','subs','entries','duties','assembly','break','occasions','visits','library','quran','tools','settings'];
           out.views = {};
           for (const v of views) { try { go(v); await new Promise(r => setTimeout(r, 150)); out.views[v] = document.querySelector('#view').innerHTML.length > 50; } catch (e) { out.views[v] = 'ERR ' + e.message; } }
           go('dashboard');
@@ -123,6 +123,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 
 ipcMain.handle('open:path', (_e, p) => shell.openPath(String(p)));
+// فتح رسالة نصية جاهزة في تطبيق الرسائل (Phone Link) — رقم ونص فقط
+ipcMain.handle('open:sms', (_e, u) => { if (!/^sms:\+?\d{8,15}\?body=[^\s]*$/.test(String(u))) return false; shell.openExternal(String(u)); return true; });
 ipcMain.handle('app:version', () => app.getVersion());
 
 // ───────── المزامنة التلقائية عبر OneDrive / Google Drive ─────────
@@ -205,6 +207,7 @@ ipcMain.handle('backup:daily', (_e, day, text) => {
 });
 ipcMain.handle('backup:open', () => { const d = lastBackupDir || backupTargets()[0]; fs.mkdirSync(d, { recursive: true }); shell.openPath(d); return d; });
 ipcMain.handle('backup:targets', () => backupTargets());
+require('./sms-main')({ app, ipcMain, net, safeStorage });
 ipcMain.handle('app:focus', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } return true; });
 module.exports = { parseOneDriveAccounts };
 ipcMain.handle('sync:setRoot', (_e, base) => {

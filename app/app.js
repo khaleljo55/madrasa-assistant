@@ -64,7 +64,7 @@ function openBlob(blob, name, download) {
 // كل العناصر التي تحمل مرفقات (للنسخ الاحتياطي والمزامنة)
 function attItems(d) {
   const custom = (d.customSections || []).flatMap((s) => s.records.flatMap((r) => s.fields.filter((f) => f.type === 'file' && r.values[f.id]?.stored).map((f) => ({ file: r.values[f.id] }))));
-  return [...(d.library || []), ...(d.correspondence || []), ...custom];
+  return [...(d.library || []), ...(d.correspondence || []), ...(d.circulars || []).filter((c) => c.file), ...custom];
 }
 const api = window.api || {
   isDesktop: false,
@@ -354,7 +354,7 @@ function renderSyncBar() {
       <button class="btn primary" data-act="syncUseRemote">تحميل بيانات الجهاز الآخر</button><button class="btn" data-act="syncUseLocal">الاحتفاظ ببيانات هذا الجهاز</button></div>`;
   } else if (Sync.status === 'mismatch') {
     const f = Sync.mismatch?.found;
-    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>🔒</span><div><b>المزامنة متوقفة لحماية البيانات</b><div class="muted">${f ? `OneDrive على هذا الجهاز مسجّل بحساب <span dir="ltr">${esc(f)}</span>` : 'لا يوجد OneDrive مسجّل على هذا الجهاز'}، والحساب المطلوب <span dir="ltr">${esc(Sync.wantEmail())}</span>. سجّلي الدخول إلى OneDrive بالحساب المطلوب ثم اضغطي «إعادة الفحص».</div></div><span class="spacer"></span><button class="btn sm primary" data-act="syncRecheck">إعادة الفحص</button><button class="btn sm" data-act="nav" data-id="settings">الإعدادات</button></div>`;
+    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>🔒</span><div><b>المزامنة متوقفة لحماية البيانات</b><div class="muted">${f ? `OneDrive على هذا الجهاز مسجّل بحساب <span dir="ltr">${esc(f)}</span>` : 'لا يوجد OneDrive مسجّل على هذا الجهاز'}، والحساب المطلوب <span dir="ltr">${esc(Sync.wantEmail())}</span>. سجّلي الدخول إلى OneDrive بالحساب المطلوب ثم اضغطي «إعادة الفحص».</div></div><span class="spacer"></span><button class="btn sm primary" data-act="syncRecheck">إعادة الفحص</button><button class="btn sm" data-act="setGo" data-id="sync">إعدادات المزامنة</button></div>`;
   } else if (Sync.status === 'paused') {
     el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span>🔄</span><div>المزامنة بانتظار موافقتكِ</div><span class="spacer"></span><button class="btn sm primary" data-act="syncResume">تفعيل المزامنة</button></div>`;
   } else if (Sync.status === 'error') {

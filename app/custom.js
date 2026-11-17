@@ -14,7 +14,7 @@ const CS_TPL = [
 const CS = { edit: null, q: {} };
 const csSec = (id) => db.customSections.find((s) => s.id === id);
 const csFmt = (f, v) => (v == null || v === '' ? '' : f.type === 'date' ? fmtH(v) : f.type === 'check' ? (v ? '✔️' : '') : f.type === 'file' ? (v?.name ? '📎 ' + v.name : '') : String(v));
-let _csSig = '';
+let _csSig = null;
 function csSyncNav() {
   const secs = db?.customSections || [], sig = secs.map((s) => s.id + s.name + s.icon).join('|');
   if (sig === _csSig) return; _csSig = sig;

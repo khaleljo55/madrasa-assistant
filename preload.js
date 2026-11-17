@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('madrasaNative', {
   onVoice: (cb) => ipcRenderer.on('voice:text', (_e, msg) => cb(msg)),
   onDownloadDone: (cb) => ipcRenderer.on('download:done', (_e, info) => cb(info)),
   openPath: (p) => ipcRenderer.invoke('open:path', p),
+  openSms: (u) => ipcRenderer.invoke('open:sms', u),
   showInFolder: (p) => ipcRenderer.invoke('show:folder', p),
   appVersion: () => ipcRenderer.invoke('app:version'),
   appConfig: () => ipcRenderer.invoke('app:config'),
@@ -23,6 +24,12 @@ contextBridge.exposeInMainWorld('madrasaNative', {
     readBin: (rel) => ipcRenderer.invoke('sync:readBin', rel),
     writeBin: (rel, data) => ipcRenderer.invoke('sync:writeBin', rel, data),
     list: (rel) => ipcRenderer.invoke('sync:list', rel),
+  },
+  sms: {
+    get: () => ipcRenderer.invoke('sms:get'),
+    set: (patch) => ipcRenderer.invoke('sms:set', patch),
+    send: (list) => ipcRenderer.invoke('sms:send', list),
+    balance: () => ipcRenderer.invoke('sms:balance'),
   },
   backup: {
     daily: (day, text) => ipcRenderer.invoke('backup:daily', day, text),

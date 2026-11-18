@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('madrasaNative', {
   focus: () => ipcRenderer.invoke('app:focus'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateInstall: (url) => ipcRenderer.invoke('update:install', url),
+  updateDownload: (url, version, size) => ipcRenderer.invoke('update:download', url, version, size),
+  updateApply: () => ipcRenderer.invoke('update:apply'),
+  updatePending: () => ipcRenderer.invoke('update:pending'),
+  updateAuto: (v) => ipcRenderer.invoke('update:auto', v),
   onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
   sync: {
     detect: () => ipcRenderer.invoke('sync:detect'),

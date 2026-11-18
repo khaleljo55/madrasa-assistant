@@ -261,27 +261,57 @@ ipcMain.handle('update:check', async () => {
     return { available: true, version, url: asset.browser_download_url, size: asset.size, notes: j.body || '' };
   } catch (e) { return { available: false, error: e.message }; }
 });
-ipcMain.handle('update:install', async (_e, url) => {
+// ─── التحديث التلقائي (1.2.0) ───
+// يُنزَّل التحديث في الخلفية، ثم يُثبَّت بصمت (دون نوافذ) عند إغلاق البرنامج، أو فوراً بطلب الواجهة مع إعادة الفتح.
+// المثبّت لكل مستخدم (perMachine=false) فلا يطلب صلاحية المسؤول، والبيانات في userData لا تُمس.
+const UPDATE_URL_RE = /^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//;
+let pendingUpdate = null, applyOnQuit = false, relaunchAfter = false;
+async function downloadUpdate(url, version, size) {
+  if (!UPDATE_URL_RE.test(String(url))) throw new Error('رابط غير موثوق');
+  const file = path.join(app.getPath('temp'), `Madrasa-Assistant-Setup-${String(version).replace(/[^\d.]/g, '')}.exe`);
+  try { if (size && fs.statSync(file).size === size) return file; } catch { } // نُزّل سابقاً
+  const r = await net.fetch(url, { headers: { 'User-Agent': 'MadrasaAssistant' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const total = Number(r.headers.get('content-length')) || size || 0;
+  const tmp = file + '.part', out = fs.createWriteStream(tmp);
+  const reader = r.body.getReader(); let got = 0, lastPct = -1;
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    got += value.length; out.write(Buffer.from(value));
+    const pct = total ? Math.floor((got / total) * 100) : 0;
+    if (pct !== lastPct && win && !win.isDestroyed()) { lastPct = pct; win.webContents.send('update:progress', pct); }
+  }
+  await new Promise((res, rej) => out.end((err) => (err ? rej(err) : res())));
+  if (total && got < total) { try { fs.unlinkSync(tmp); } catch { } throw new Error('التنزيل غير مكتمل'); }
+  fs.renameSync(tmp, file);
+  return file;
+}
+ipcMain.handle('update:download', async (_e, url, version, size) => {
+  try { const file = await downloadUpdate(url, version, size); pendingUpdate = { file, version }; return { ok: true, version }; } catch (e) { return { ok: false, error: e.message }; }
+});
+// تثبيت الآن: نغلق النافذة (فتُحفظ آخر التعديلات) ثم يعمل المثبّت بصمت ويعيد فتح البرنامج
+ipcMain.handle('update:apply', () => {
+  if (!pendingUpdate) return { ok: false, error: 'لا يوجد تحديث جاهز' };
+  applyOnQuit = true; relaunchAfter = true;
+  setTimeout(() => { if (win && !win.isDestroyed()) win.close(); else app.quit(); }, 300);
+  return { ok: true };
+});
+ipcMain.handle('update:pending', () => (pendingUpdate ? { version: pendingUpdate.version } : null));
+app.on('will-quit', () => {
+  if (!pendingUpdate || smokeArg) return;
+  if (!applyOnQuit && !autoInstallOnQuit()) return;
   try {
-    if (!/^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//.test(String(url))) throw new Error('رابط غير موثوق');
-    const r = await net.fetch(url, { headers: { 'User-Agent': 'MadrasaAssistant' } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const total = Number(r.headers.get('content-length')) || 0;
-    const file = path.join(app.getPath('temp'), `Madrasa-Assistant-Update-${Date.now()}.exe`);
-    const out = fs.createWriteStream(file);
-    const reader = r.body.getReader(); let got = 0, lastPct = -1;
-    for (;;) {
-      const { done, value } = await reader.read(); if (done) break;
-      got += value.length; out.write(Buffer.from(value));
-      const pct = total ? Math.floor((got / total) * 100) : 0;
-      if (pct !== lastPct && win && !win.isDestroyed()) { lastPct = pct; win.webContents.send('update:progress', pct); }
-    }
-    await new Promise((res, rej) => out.end((err) => (err ? rej(err) : res())));
-    if (total && got < total) throw new Error('التنزيل غير مكتمل');
-    // نحفظ البيانات أولاً ثم نشغّل المثبّت ونغلق البرنامج
-    setTimeout(() => { shell.openPath(file); setTimeout(() => app.quit(), 800); }, 600);
-    return { ok: true };
-  } catch (e) { return { ok: false, error: e.message }; }
+    const args = ['/S']; if (relaunchAfter) args.push('--force-run');
+    require('child_process').spawn(pendingUpdate.file, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } catch (e) { console.error('update apply failed', e); }
+});
+let autoInstallFlag = true;
+const autoInstallOnQuit = () => autoInstallFlag;
+ipcMain.handle('update:auto', (_e, v) => { autoInstallFlag = v !== false; return autoInstallFlag; });
+// التحديث اليدوي القديم (يبقى للتوافق): تنزيل ثم تثبيت مع إعادة الفتح
+ipcMain.handle('update:install', async (_e, url) => {
+  try { const file = await downloadUpdate(url, 'manual', 0); pendingUpdate = { file, version: 'manual' }; applyOnQuit = true; relaunchAfter = true; setTimeout(() => { if (win && !win.isDestroyed()) win.close(); }, 600); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('show:folder', (_e, p) => shell.showItemInFolder(String(p)));
 

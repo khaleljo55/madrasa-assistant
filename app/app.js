@@ -64,7 +64,7 @@ function openBlob(blob, name, download) {
 // كل العناصر التي تحمل مرفقات (للنسخ الاحتياطي والمزامنة)
 function attItems(d) {
   const custom = (d.customSections || []).flatMap((s) => s.records.flatMap((r) => s.fields.filter((f) => f.type === 'file' && r.values[f.id]?.stored).map((f) => ({ file: r.values[f.id] }))));
-  return [...(d.library || []), ...(d.correspondence || []), ...(d.circulars || []).filter((c) => c.file), ...custom];
+  return [...(d.library || []), ...(d.correspondence || []), ...(d.circulars || []).filter((c) => c.file), ...(d.perf?.evidence || []).filter((e) => e.file), ...custom];
 }
 const api = window.api || {
   isDesktop: false,
@@ -741,7 +741,7 @@ VIEWS.calendar = {
       const dt = parse(d);
       if (i >= 35 && dt.getMonth() !== m - 1) break;
       const items = itemsForDate(d);
-      const cls = ['cal-day', dt.getMonth() !== m - 1 && 'other', isWeekend(d) && 'weekend', d === t && 'today', d === ui.calSel && 'sel'].filter(Boolean).join(' ');
+      const cls = ['cal-day', dt.getMonth() !== m - 1 && 'other', (isWeekend(d) || (typeof acadOff === 'function' && acadOff(d))) && 'weekend', d === t && 'today', d === ui.calSel && 'sel'].filter(Boolean).join(' ');
       cells += `<div class="${cls}" data-act="calSel" data-id="${d}">
         <div class="dn"><b>${dt.getDate()}</b><span class="hj">${fmtHijriDay.format(dt)}</span></div>
         ${items.slice(0, 3).map((it) => `<div class="cal-tag ${it.kind}">${esc(it.label)}</div>`).join('')}
@@ -757,6 +757,7 @@ VIEWS.calendar = {
         if (it.kind === 'occ') return `<div class="li"><span class="cal-tag occ">مناسبة</span><div class="grow"><div class="t">${esc(it.ref.name)}</div><div class="s">${esc(it.ref.initiative || 'لا توجد مبادرة بعد')}</div></div><button class="icon-btn" data-act="occEdit" data-id="${it.ref.id}">✏️</button></div>`;
         if (it.kind === 'visit') return `<div class="li"><span class="cal-tag visit">زيارة</span><div class="grow"><div class="t">${esc(it.ref.team)}</div><div class="s">${esc(it.ref.time || '')}</div></div><button class="icon-btn" data-act="visitOpen" data-id="${it.ref.id}">↗</button></div>`;
         if (it.kind === 'abs') return it.ref.map((a) => `<div class="li"><span class="cal-tag abs">غياب</span><div class="grow"><div class="t">${esc(tName(a.teacherId))}</div><div class="s">${esc(a.type)}</div></div></div>`).join('');
+        if (it.kind === 'hol') return `<div class="li"><span class="cal-tag hol">إجازة</span><div class="grow"><div class="t">${esc(it.ref.name)}</div><div class="s">${fmtG(it.ref.from)}${it.ref.to && it.ref.to !== it.ref.from ? ' ← ' + fmtG(it.ref.to) : ''}</div></div><button class="icon-btn" data-act="nav" data-id="acad">↗</button></div>`;
         if (it.kind === 'sup') return `<div class="li"><span class="cal-tag sup">إشراف</span><div class="grow"><div class="t">يوم الإشراف على الفسحة</div></div></div>`;
         return '';
       }).join('')}</div>` : emptyState('🗓️', 'لا شيء في هذا اليوم')}

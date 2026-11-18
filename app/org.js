@@ -15,7 +15,7 @@ const NEW_ITEMS = {
   const pick = (ids) => ids.map((id) => byId[id]).filter(Boolean);
   const groups = [
     byId.dashboard,
-    { group: 'org', ic: '🗂️', label: 'التنظيم والتقارير', items: pick(['tasks', 'calendar', 'report', 'stats']) },
+    { group: 'org', ic: '🗂️', label: 'التنظيم والتقارير', items: pick(['tasks', 'calendar', 'acad', 'perf', 'report', 'stats']) },
     { group: 'teachers', ic: '👩‍🏫', label: 'شؤون المعلمات', items: pick(['teachers', 'timetable', 'absence', 'subs', 'entries', 'duties']) },
     byId.students,
     { group: 'super', ic: '🎙️', label: 'الإشراف والأنشطة', items: pick(['assembly', 'break', 'occasions', 'visits', 'visitors']) },

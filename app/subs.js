@@ -45,7 +45,7 @@ VIEWS.subs = {
     const top = Object.entries(L).sort((a, b) => b[1] - a[1]);
     return `<div class="toolbar"><label class="muted">اليوم</label><input type="date" class="input" value="${d}" data-change="subsDate" style="width:auto"><span class="muted">${dayName(d)}</span>
         <span class="spacer" style="flex:1"></span>${need.length ? `<span class="chip ${done === need.length ? 'green' : 'amber'}">وُزّع ${done} من ${need.length}</span>` : ''}<button class="btn sm" data-act="nav" data-id="absence">＋ تسجيل غياب معلمة</button></div>
-      ${wd(d) > 4 ? `<div class="card">${emptyState('🌴', 'هذا اليوم عطلة نهاية الأسبوع')}</div>` : !abs.length ? `<div class="card">${emptyState('✅', 'لا توجد معلمات غائبات في هذا اليوم.<br>عند تسجيل غياب معلمة في «سجل الغياب» تظهر حصصها هنا تلقائياً.')}</div>`
+      ${wd(d) > 4 || (typeof acadOff === 'function' && acadOff(d)) ? `<div class="card">${emptyState('🌴', wd(d) > 4 ? 'هذا اليوم عطلة نهاية الأسبوع' : `هذا اليوم ضمن ${esc(acadHoliday(d).name)}`)}</div>` : !abs.length ? `<div class="card">${emptyState('✅', 'لا توجد معلمات غائبات في هذا اليوم.<br>عند تسجيل غياب معلمة في «سجل الغياب» تظهر حصصها هنا تلقائياً.')}</div>`
       : !need.length ? `<div class="card">${emptyState('📭', `الغائبات: ${abs.map((id) => esc(tName(id))).join('، ')}<br>ليس لهن حصص في جدول ${dayName(d)}.`)}</div>`
       : `<div class="card" style="padding:0;overflow:auto"><table class="table"><thead><tr><th>الحصة</th><th>الفصل</th><th>المادة</th><th>المعلمة الغائبة</th><th>البديلة (المتفرغات الأقل انتظاراً أولاً)</th></tr></thead><tbody>
         ${need.map((x) => { const s = subOf(d, x), c = subCandidates(d, x); return `<tr class="${s?.subId ? '' : 'sub-open'}"><td><b>${x.period}</b></td><td>${esc(x.className)}</td><td>${esc(x.subject || '')}</td><td>${esc(tName(x.teacherId))}</td>
@@ -115,7 +115,7 @@ Object.assign(ACTIONS, {
   bulEdit: () => { const b = bulletin(modalCtx.bulletin); closeModal(); db.documents = db.documents || []; const doc = { id: uid(), title: b.title, html: b.html, updatedAt: todayISO() }; db.documents.push(doc); DOCS.id = doc.id; go('letters'); commit(false); },
 });
 addHook('dashCards', (t) => {
-  if (wd(t) > 4) return '';
+  if (wd(t) > 4 || (typeof acadOff === 'function' && acadOff(t))) return '';
   const p = subsPending(t), need = db.timetable.length ? subsNeeded(t).length : 0;
   return `<div class="card"><h3>📰 صباح اليوم</h3><div class="muted" style="margin-bottom:10px">نشرة اليوم جاهزة: الغياب، والانتظار، والإشراف، والإذاعة، والمناسبات، والمهام.</div>
     ${need ? `<div style="margin-bottom:10px"><span class="chip ${p ? 'amber' : 'green'}">🔄 حصص الانتظار: ${p ? `${p} بلا بديلة` : 'موزعة كلها ✓'}</span></div>` : ''}

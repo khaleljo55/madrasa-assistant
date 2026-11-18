@@ -94,7 +94,7 @@ function runSmokeTest(outDir) {
       try {
         const res = await win.webContents.executeJavaScript(`(async () => {
           const out = { title: document.title, navItems: document.querySelectorAll('.nav-item').length, hasDb: typeof db === 'object' && !!db };
-          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','circulars','meetings','sms','visitors','teachers','students','csManage','timetable','absence','subs','entries','duties','assembly','break','occasions','visits','library','quran','tools','settings'];
+          const views = ['dashboard','tasks','calendar','report','stats','letters','present','mail','circulars','meetings','sms','visitors','teachers','students','csManage','timetable','absence','subs','entries','duties','assembly','break','occasions','visits','library','quran','tools','settings','acad','perf'];
           out.views = {};
           for (const v of views) { try { go(v); await new Promise(r => setTimeout(r, 150)); out.views[v] = document.querySelector('#view').innerHTML.length > 50; } catch (e) { out.views[v] = 'ERR ' + e.message; } }
           go('dashboard');

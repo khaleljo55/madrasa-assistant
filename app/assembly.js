@@ -151,7 +151,7 @@ Object.assign(ACTIONS, {
         const last = AS().plan.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
         let ci = last ? (classes.indexOf(last.className) + 1) % classes.length : 0, ti = last ? (topics.indexOf(last.topic) + 1) % topics.length : 0, n = 0;
         for (let d = v.from, k = 0; k < (+v.weeks || 4) * 7; k++, d = addDays(d, 1)) {
-          if (!allow.includes(parse(d).getDay())) continue;
+          if (!allow.includes(parse(d).getDay()) || (typeof acadOff === 'function' && acadOff(d))) continue;
           const ex = radioOn(d); if (ex && v.keep) continue;
           const o = occOnDate(d), p = ex || { id: uid(), date: d };
           Object.assign(p, { className: classes[ci % classes.length], topic: o ? o.name : topics[ti % topics.length] });
@@ -161,7 +161,7 @@ Object.assign(ACTIONS, {
         ui.asTab = 'plan'; commit(); toast(`جُدولت ${n} إذاعة على ${classes.length} فصول`, 'ok');
       } });
   },
-  radioAdd: () => { const last = AS().plan.map((p) => p.date).sort().pop(); let d = last ? addDays(last, 1) : todayISO(); while (parse(d).getDay() > 4) d = addDays(d, 1); AS().plan.push({ id: uid(), date: d, className: '', topic: occOnDate(d)?.name || Object.keys(RADIO_TOPICS)[0] }); commit(); },
+  radioAdd: () => { const last = AS().plan.map((p) => p.date).sort().pop(); let d = last ? addDays(last, 1) : todayISO(); while (parse(d).getDay() > 4 || (typeof acadOff === 'function' && acadOff(d))) d = addDays(d, 1); AS().plan.push({ id: uid(), date: d, className: '', topic: occOnDate(d)?.name || Object.keys(RADIO_TOPICS)[0] }); commit(); },
   radioDel: (el) => { AS().plan = AS().plan.filter((p) => p.id !== el.dataset.id); commit(); },
   radioPlanPrint: () => { const L = AS().plan.filter((p) => p.date >= todayISO()).sort((a, b) => a.date.localeCompare(b.date)); printDoc('جدول الإذاعة المدرسية', `<table><thead><tr><th>اليوم</th><th>التاريخ</th><th>الفصل</th><th>المشرفة</th><th>الموضوع</th></tr></thead><tbody>${L.map((p) => `<tr><td>${dayName(p.date)}</td><td>${fmtH(p.date)}</td><td>${esc(p.className || '')}</td><td>${p.teacherId ? esc(tName(p.teacherId)) : ''}</td><td>${esc(p.topic || '')}</td></tr>`).join('')}</tbody></table>`); },
   asRunPrint: () => { const d = ui.asDate || todayISO(), A = AS(), p = radioOn(d); let t = A.start; printDoc(`برنامج الطابور الصباحي — ${dayName(d)} ${fmtH(d)}`, `<table><thead><tr><th style="width:90px">الوقت</th><th>الفقرة</th><th style="width:90px">المدة</th></tr></thead><tbody>${A.segments.map((s) => { const f = t; t = addMin(t, +s.min || 0); return `<tr><td dir="ltr">${f}</td><td>${esc(s.name)}${/إذاعة/.test(s.name) && p ? ` — ${esc(p.className || '')} · ${esc(p.topic || '')}` : ''}</td><td>${s.min} دقائق</td></tr>`; }).join('')}</tbody></table>`); },

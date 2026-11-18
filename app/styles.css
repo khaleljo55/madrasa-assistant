@@ -141,6 +141,19 @@ textarea.input { resize: vertical; min-height: 80px; width: 100%; }
 .cal-tag.occ { background: var(--purple-soft); color: var(--purple); }
 .cal-tag.visit { background: var(--amber-soft); color: var(--amber); }
 .cal-tag.abs { background: var(--red-soft); color: var(--red); }
+.cal-tag.hol { background: #e6f0fb; color: #2f5f8f; }
+/* التقويم الدراسي: كل خانة أسبوع */
+.ac-strip { display: flex; flex-wrap: wrap; gap: 3px; padding-top: 16px; }
+.ac-wk { position: relative; width: 16px; height: 22px; border-radius: 4px; background: var(--brand-soft); }
+.ac-wk.sch { background: #9fd3c7; }
+.ac-wk.part { background: linear-gradient(180deg, #9fd3c7 50%, #f3c98b 50%); }
+.ac-wk.hol { background: #f3c98b; }
+.ac-wk.gap { background: #e9efed; }
+.ac-wk.now { outline: 2px solid var(--brand); outline-offset: 1px; }
+.ac-m { position: absolute; top: -16px; right: 0; font-size: 10.5px; color: var(--muted, #6b7c78); white-space: nowrap; }
+.ac-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #6b7c78; margin-top: 8px; }
+.ac-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-inline-end: 4px; }
+.ac-legend i.sch { background: #9fd3c7; } .ac-legend i.part { background: linear-gradient(180deg, #9fd3c7 50%, #f3c98b 50%); } .ac-legend i.hol { background: #f3c98b; } .ac-legend i.now { outline: 2px solid var(--brand); }
 .cal-tag.sup { background: #fff4d6; color: #8a5a00; }
 .cal-layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
 @media (max-width: 1150px) { .cal-layout { grid-template-columns: 1fr; } }

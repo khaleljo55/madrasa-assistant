@@ -42,6 +42,9 @@ if errorlevel 1 goto fail
 
 echo.
 echo [2/4] بناء ملف التثبيت
+REM ملفات قديمة من نسخ سابقة يقفلها برنامج الحماية فتوقف البناء
+if exist build.ps1 del /f /q build.ps1 >nul 2>&1
+if exist publish.ps1 del /f /q publish.ps1 >nul 2>&1
 call npx --no-install electron-builder --win nsis --x64 --publish never
 if errorlevel 1 (
   echo  إعادة المحاولة من الخادم الأصلي...

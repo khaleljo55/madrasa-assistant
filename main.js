@@ -10,6 +10,9 @@ const APP_ID = 'sa.school.madrasa-assistant';
 const UPDATE_REPO = 'khaleljo55/madrasa-assistant'; // تُنشر ملفات التثبيت الجديدة في Releases بهذا المستودع
 let win = null;
 
+// الفحص الآلي أثناء البناء يعمل بملف تعريف مؤقت منفصل، فلا يتعارض مع البرنامج المفتوح ولا يلمس بياناته
+if (process.argv.some((a) => a.startsWith('--smoke-test='))) app.setPath('userData', path.join(app.getPath('temp'), 'madrasa-smoke-profile'));
+
 // نسخة واحدة فقط من البرنامج
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });

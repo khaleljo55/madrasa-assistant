@@ -61,9 +61,14 @@ MAX_CHANNELS = "5"
   console.log('  ✓ المخزن جاهز');
 
   step(3, 'نشر الخادم (إن سُئلت عن اسم نطاق workers.dev فاكتب اسماً بالإنجليزية واضغط Enter)');
-  const d = await run(['deploy'], { capture: true });
-  const url = (d.out.match(/https:\/\/madrasa-sync\.[a-z0-9-]+\.workers\.dev/i) || [])[0];
-  if (d.code !== 0 || !url) fail('لم يكتمل النشر. صوّر هذه النافذة وأرسلها.');
+  let d, url;
+  for (let i = 0; i < 3 && !url; i++) { // أول نشر في حساب جديد قد يفشل مؤقتاً عند Cloudflare
+    if (i) { console.log('  … إعادة المحاولة بعد 20 ثانية'); await new Promise((r) => setTimeout(r, 20000)); }
+    d = await run(['deploy'], { capture: true });
+    url = d.code === 0 && (d.out.match(/https:\/\/madrasa-sync\.[a-z0-9-]+\.workers\.dev/i) || [])[0];
+    if (/register a workers\.dev subdomain/i.test(d.out)) fail('يلزم اختيار اسم workers.dev مرة واحدة: افتح https://dash.cloudflare.com ← Compute ← Workers & Pages ← Create application ← Hello World ← Deploy، ثم أعد تشغيل الأداة.');
+  }
+  if (!url) fail('لم يكتمل النشر. صوّر هذه النافذة وأرسلها.');
 
   step(4, 'التحقق من الخادم وحفظ رابطه');
   let ok = false;

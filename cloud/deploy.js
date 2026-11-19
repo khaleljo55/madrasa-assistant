@@ -57,6 +57,9 @@ id = "${kvId}"
 
 [vars]
 MAX_CHANNELS = "5"
+
+[triggers]
+crons = ["*/5 * * * *"]
 `);
   console.log('  ✓ المخزن جاهز');
 

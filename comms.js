@@ -51,7 +51,7 @@ NAV.push({ id: 'comms', ic: '📲', label: 'تطبيق التواصل', badge: c
 VIEWS.comms = {
   render() {
     if (!cmReady()) return `<div class="card"><h3>📲 تطبيق التواصل للمعلمات والإداريات</h3><div class="muted" style="margin-bottom:12px">تطبيق بسيط على جوال كل معلمة وإدارية، تصلهن فيه رسائلكِ وإشعاراتكِ مباشرة بدل البريد والرسائل النصية، مع محادثة داخلية لمن تختارين.</div>
-      <div class="banner"><span class="big">🔐</span><div>يعمل بعد تفعيل «المزامنة المشفّرة» من الإعدادات.</div><span class="spacer"></span><button class="btn primary" data-act="setGo" data-id="sync">فتح الإعدادات</button></div></div>`;
+      <div class="banner"><span class="big">🔑</span><div>يعمل بعد الدخول بحساب المدرسة (البريد وكلمة المرور).</div><span class="spacer"></span><button class="btn primary" data-act="acLoginOpen">🔑 تسجيل الدخول</button><button class="btn" data-act="setGo" data-id="sync">الإعدادات</button></div></div>`;
     setTimeout(() => cmLoad(false), 0);
     const ps = CM.users.filter((u) => cmStu(u) && u.status === 'pending').length, pf = CM.users.filter((u) => cmStaff(u) && u.status === 'pending').length;
     const grpSw = `<div class="seg" style="margin-bottom:12px">${[['staff', '👩‍🏫 المعلمات والإداريات', pf + (CM.sum.chatLast > cmSeenChat() ? 1 : 0)], ['student', '🎒 الطالبات', ps + (CM.sum.dmLast > Number(db.settings.commsDmTab || 0) ? 1 : 0)]].map(([k, l, n]) => `<button class="${CM.grp === k ? 'on' : ''}" data-act="cmGrp" data-id="${k}" style="font-size:15px;padding:8px 16px">${l}${n ? ` <span class="badge">${n}</span>` : ''}</button>`).join('')}</div>`;

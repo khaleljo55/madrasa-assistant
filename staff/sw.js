@@ -1,8 +1,8 @@
-// تواصل المدرسة 1.5.0-mwnf711j
-const CACHE = 'staff-1.5.0-mwnf711j';
-const SHELL = ['./', 'index.html', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+// تواصل المدرسة 1.6.0-mwnft1sn
+const P = 'staff', CACHE = P + '-1.6.0-mwnft1sn';
+const SHELL = ['./', 'index.html', 'mode.js', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
-self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('staff-') && k !== CACHE && k !== 'staff-push').map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith(P + '-') && k !== CACHE && k !== P + '-push').map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin) return;
@@ -11,10 +11,10 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => e.waitUntil((async () => {
   let items = [];
   try {
-    const r = await (await caches.open('staff-push')).match('cfg'), cfg = r && await r.json();
+    const r = await (await caches.open(P + '-push')).match('cfg'), cfg = r && await r.json();
     if (cfg && cfg.tok) { const res = await fetch(cfg.url + '/st/notes', { cache: 'no-store', headers: { Authorization: 'Bearer ' + cfg.tok } }); if (res.ok) items = (await res.json()).items || []; }
   } catch (err) { }
-  if (!items.length) items = [{ title: '📬 تواصل المدرسة', body: 'وصلتكِ رسالة جديدة', url: './' }];
+  if (!items.length) items = [{ title: '📬 تواصل المدرسة', body: 'وصلكِ جديد', url: './' }];
   await Promise.all(items.slice(-3).map((m, i) => self.registration.showNotification(m.title, { body: m.body || '', icon: 'icon-192.png', tag: 'st' + (m.id || i), lang: 'ar', dir: 'rtl', data: { url: m.url || './' } })));
 })()));
 self.addEventListener('notificationclick', (e) => {

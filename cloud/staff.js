@@ -20,6 +20,9 @@ async function schema(db) {
     db.prepare(`CREATE TABLE IF NOT EXISTS subs (endpoint TEXT PRIMARY KEY, user_id TEXT NOT NULL, created INTEGER NOT NULL)`),
     db.prepare(`CREATE TABLE IF NOT EXISTS pushq (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT, state INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, at INTEGER NOT NULL DEFAULT 0)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS pq_state ON pushq (state, at, id)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS surveys (id TEXT PRIMARY KEY, school TEXT NOT NULL, title TEXT NOT NULL, intro TEXT, fields TEXT NOT NULL, target TEXT, pkey TEXT, public INTEGER NOT NULL DEFAULT 0, open INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS responses (id INTEGER PRIMARY KEY AUTOINCREMENT, survey_id TEXT NOT NULL, school TEXT NOT NULL, user_id TEXT, data TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER, imported INTEGER NOT NULL DEFAULT 0)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS resp_sv ON responses (survey_id, id)`),
   ]);
   // ترقية قاعدة أُنشئت بإصدار أقدم (يُتجاهل الخطأ إن كان العمود موجوداً)
   for (const sql of ['ALTER TABLE users ADD COLUMN cls TEXT', 'ALTER TABLE messages ADD COLUMN grp TEXT', 'ALTER TABLE messages ADD COLUMN thread TEXT', 'ALTER TABLE messages ADD COLUMN due TEXT', 'ALTER TABLE messages ADD COLUMN remind_at INTEGER',
@@ -141,7 +144,7 @@ export async function staffApi(req, env, ctx, url, json, channelExists, send, no
     await env.DB.prepare('UPDATE users SET pass = ? WHERE id = ?').bind(await sha('pw:' + np), u.id).run(); return json({ ok: true });
   }
   if (p === '/st/inbox' && M === 'GET') {
-    const { results } = await env.DB.prepare('SELECT m.id, m.kind, m.title, m.body, m.sender_name, m.created, m.due, m.remind_at, r.read_at, r.done_at, r.ok_at FROM recipients r JOIN messages m ON m.id = r.msg_id WHERE r.user_id = ? AND m.deleted = 0 ORDER BY m.id DESC LIMIT 300').bind(u.id).all();
+    const { results } = await env.DB.prepare('SELECT m.id, m.kind, m.title, m.body, m.sender_name, m.created, m.due, m.remind_at, m.thread, r.read_at, r.done_at, r.ok_at FROM recipients r JOIN messages m ON m.id = r.msg_id WHERE r.user_id = ? AND m.deleted = 0 ORDER BY m.id DESC LIMIT 300').bind(u.id).all();
     return json({ items: results, user: pubUser(u) });
   }
   if (p === '/st/read' && M === 'POST') {
@@ -179,6 +182,22 @@ export async function staffApi(req, env, ctx, url, json, channelExists, send, no
       const members = (await env.DB.prepare("SELECT id FROM users WHERE school = ? AND status = 'active' AND chat = 1 AND role != 'student' AND id != ?").bind(u.school, u.id).all()).results.map((x) => x.id);
       await queuePush(env, ctx, members, '💬 ' + u.name, text, './#chat', send);
       return json({ ok: true, id: r.meta?.last_row_id });
+    }
+  }
+  const sv = p.match(/^\/st\/survey\/([0-9a-f]{16})$/);
+  if (sv) { // تعبئة استبيان من داخل التطبيق (مرة واحدة لكل مستخدمة، وتُعدَّل)
+    const S = await env.DB.prepare('SELECT * FROM surveys WHERE id = ? AND school = ?').bind(sv[1], u.school).first();
+    const msg = S && await env.DB.prepare("SELECT r.msg_id FROM recipients r JOIN messages m ON m.id = r.msg_id WHERE m.kind = 'survey' AND m.thread = ? AND r.user_id = ? AND m.deleted = 0").bind(S.id, u.id).first();
+    if (!S || (!msg && !S.public)) return json({ error: 'not_found' }, 404);
+    const mine = await env.DB.prepare('SELECT id, data FROM responses WHERE survey_id = ? AND user_id = ?').bind(S.id, u.id).first();
+    if (M === 'GET') return json({ survey: svPub(S), answer: mine ? JSON.parse(mine.data) : null });
+    if (M === 'POST') {
+      if (!S.open) return json({ error: 'closed' }, 403);
+      const data = svClean(S, body.data); if (data.error) return json(data, 400);
+      if (mine) await env.DB.prepare('UPDATE responses SET data = ?, updated = ?, imported = 0 WHERE id = ?').bind(JSON.stringify(data), now, mine.id).run();
+      else await env.DB.prepare('INSERT INTO responses (survey_id, school, user_id, data, created) VALUES (?, ?, ?, ?, ?)').bind(S.id, u.school, u.id, JSON.stringify(data), now).run();
+      if (msg) await env.DB.prepare('UPDATE recipients SET done_at = ?, read_at = COALESCE(read_at, ?) WHERE msg_id = ? AND user_id = ?').bind(now, now, msg.msg_id, u.id).run();
+      return json({ ok: true });
     }
   }
   if (p === '/st/sub') {
@@ -278,6 +297,42 @@ export async function staffAdmin(req, env, ctx, school, rest, json, send) {
   }
   const cm = rest.match(/^chat\/(\d+)$/);
   if (cm && M === 'DELETE') { await env.DB.prepare("UPDATE messages SET deleted = 1 WHERE id = ? AND school = ? AND kind IN ('chat','dm')").bind(Number(cm[1]), school).run(); return json({ ok: true }); }
+  // ───── الاستبيانات (1.9.0) ─────
+  if (rest === 'surveys' && M === 'GET') {
+    const { results } = await env.DB.prepare('SELECT s.*, (SELECT COUNT(*) FROM responses r WHERE r.survey_id = s.id) AS n, (SELECT COUNT(*) FROM responses r WHERE r.survey_id = s.id AND r.imported = 0) AS fresh FROM surveys s WHERE s.school = ? ORDER BY s.created DESC LIMIT 200').bind(school).all();
+    return json({ items: results.map((x) => ({ ...svPub(x), pkey: x.pkey, n: x.n, fresh: x.fresh, created: x.created })) });
+  }
+  if (rest === 'surveys' && M === 'POST') {
+    const fields = svFields(body.fields); if (!fields.length) return json({ error: 'no_fields' }, 400);
+    const title = clip(body.title, MAX_TITLE); if (!title) return json({ error: 'empty' }, 400);
+    const id = rnd(8), pkey = rnd(8), target = ['teacher', 'student'].includes(body.target) ? body.target : '';
+    await env.DB.prepare('INSERT INTO surveys (id, school, title, intro, fields, target, pkey, public, open, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)').bind(id, school, title, clip(body.intro, 2000), JSON.stringify(fields), target, pkey, body.public ? 1 : 0, now).run();
+    let n = 0;
+    if (body.to) { // إرساله إلى مستخدمات تطبيق التواصل
+      const ids = await audienceIds(env, school, body.to);
+      if (ids.length) {
+        const grp = body.to === 'students' || body.to?.cls ? 'student' : 'staff';
+        const r = await env.DB.prepare("INSERT INTO messages (school, kind, sender, sender_name, title, body, audience, created, grp, thread) VALUES (?, 'survey', 'admin', ?, ?, ?, ?, ?, ?, ?)").bind(school, clip(body.from || 'الإدارة', 80), title, clip(body.intro, 2000) || title, JSON.stringify(body.to).slice(0, 20000), now, grp, id).run();
+        const mid = r.meta?.last_row_id, st = env.DB.prepare('INSERT INTO recipients (msg_id, user_id) VALUES (?, ?)');
+        for (let i = 0; i < ids.length; i += 50) await env.DB.batch(ids.slice(i, i + 50).map((u) => st.bind(mid, u)));
+        await queuePush(env, ctx, ids, '📝 استبيان: ' + title, clip(body.intro, 200) || 'نرجو تعبئته', './#m' + mid, send);
+        n = ids.length;
+      }
+    }
+    return json({ ok: true, id, pkey, n });
+  }
+  const sm2 = rest.match(/^surveys\/([0-9a-f]{16})(\/imported)?$/);
+  if (sm2) {
+    const S = await env.DB.prepare('SELECT * FROM surveys WHERE id = ? AND school = ?').bind(sm2[1], school).first();
+    if (!S) return json({ error: 'not_found' }, 404);
+    if (sm2[2] && M === 'POST') { const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(Number.isFinite).slice(0, 2000); for (let i = 0; i < ids.length; i += 50) await env.DB.batch(ids.slice(i, i + 50).map((x) => env.DB.prepare('UPDATE responses SET imported = 1 WHERE id = ? AND survey_id = ?').bind(x, S.id))); return json({ ok: true }); }
+    if (M === 'GET') {
+      const { results } = await env.DB.prepare('SELECT r.id, r.user_id, r.data, r.created, r.updated, r.imported, u.name AS uname, u.role AS urole, u.cls AS ucls FROM responses r LEFT JOIN users u ON u.id = r.user_id WHERE r.survey_id = ? ORDER BY r.id DESC LIMIT 2000').bind(S.id).all();
+      return json({ survey: { ...svPub(S), pkey: S.pkey }, items: results.map((r) => ({ ...r, data: JSON.parse(r.data) })) });
+    }
+    if (M === 'POST') { const open = body.open === undefined ? S.open : body.open ? 1 : 0, pub = body.public === undefined ? S.public : body.public ? 1 : 0; await env.DB.prepare('UPDATE surveys SET open = ?, public = ? WHERE id = ?').bind(open, pub, S.id).run(); return json({ ok: true }); }
+    if (M === 'DELETE') { await env.DB.batch([env.DB.prepare('DELETE FROM responses WHERE survey_id = ?').bind(S.id), env.DB.prepare('DELETE FROM surveys WHERE id = ?').bind(S.id), env.DB.prepare("UPDATE messages SET deleted = 1 WHERE kind = 'survey' AND thread = ?").bind(S.id)]); return json({ ok: true }); }
+  }
   // المحادثات الخاصة مع الطالبات
   if (rest === 'dm' && M === 'GET') {
     const { results } = await env.DB.prepare("SELECT m.thread AS uid, MAX(m.id) AS last, MAX(CASE WHEN m.sender != 'admin' THEN m.id ELSE 0 END) AS lastIn, COUNT(*) AS n FROM messages m WHERE m.school = ? AND m.kind = 'dm' AND m.deleted = 0 GROUP BY m.thread ORDER BY last DESC LIMIT 300").bind(school).all();
@@ -299,4 +354,48 @@ export async function staffAdmin(req, env, ctx, school, rest, json, send) {
     }
   }
   return json({ error: 'not_found' }, 404);
+}
+
+// ═════════════ 📝 الاستبيانات (1.9.0) ═════════════
+const SV_TYPES = ['text', 'textarea', 'email', 'tel', 'number', 'date', 'select'];
+function svFields(f) {
+  return (Array.isArray(f) ? f : []).slice(0, 40).map((x, i) => ({
+    id: /^[a-z0-9_]{1,20}$/i.test(x?.id || '') ? x.id : 'f' + i, label: clip(x?.label, 120), type: SV_TYPES.includes(x?.type) ? x.type : 'text',
+    required: !!x?.required, options: x?.type === 'select' ? (Array.isArray(x.options) ? x.options : []).map((o) => clip(o, 80)).filter(Boolean).slice(0, 30) : undefined, map: clip(x?.map, 30),
+  })).filter((x) => x.label);
+}
+const svPub = (S) => ({ id: S.id, title: S.title, intro: S.intro || '', fields: JSON.parse(S.fields || '[]'), target: S.target || '', public: !!S.public, open: !!S.open });
+function svClean(S, data) {
+  const out = {}, F = JSON.parse(S.fields || '[]');
+  if (!data || typeof data !== 'object') return { error: 'bad_input' };
+  for (const f of F) {
+    let v = clip(data[f.id], f.type === 'textarea' ? 2000 : 300);
+    if (f.type === 'select' && v && !(f.options || []).includes(v)) v = '';
+    if (f.type === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return { error: 'bad_email', field: f.id };
+    if (f.required && !v) return { error: 'required', field: f.id };
+    if (v) out[f.id] = v;
+  }
+  if (!Object.keys(out).length) return { error: 'empty' };
+  return out;
+}
+// الرابط العام: /sv/<school>/<survey>?k=<مفتاح الرابط>
+export async function surveyPublic(req, env, ctx, url, json) {
+  if (!env.DB) return json({ error: 'no_db' }, 503);
+  await schema(env.DB);
+  const m = url.pathname.match(/^\/sv\/([0-9a-f]{32})\/([0-9a-f]{16})$/); if (!m) return json({ error: 'not_found' }, 404);
+  const S = await env.DB.prepare('SELECT * FROM surveys WHERE id = ? AND school = ?').bind(m[2], m[1]).first();
+  if (!S || !S.public) return json({ error: 'not_found' }, 404);
+  if (req.method === 'GET') { if (url.searchParams.get('k') !== S.pkey) return json({ error: 'not_found' }, 404); return json({ survey: svPub(S) }); }
+  if (req.method !== 'POST') return json({ error: 'method' }, 405);
+  let body = {}; try { const t = await req.text(); if (t.length > 20000) return json({ error: 'too_large' }, 413); body = JSON.parse(t); } catch { return json({ error: 'bad_json' }, 400); }
+  if (body.k !== S.pkey) return json({ error: 'not_found' }, 404);
+  if (!S.open) return json({ error: 'closed' }, 403);
+  const ip = req.headers.get('CF-Connecting-IP') || 'x', lk = `sl:${S.id}:${ip}`, n = Number((await env.DATA?.get(lk)) || 0);
+  if (n >= 30) return json({ error: 'too_many' }, 429); // حد معقول لكل جهاز في الساعة
+  const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM responses WHERE survey_id = ?').bind(S.id).first();
+  if (cnt.n >= 3000) return json({ error: 'full' }, 403);
+  const data = svClean(S, body.data); if (data.error) return json(data, 400);
+  await env.DB.prepare('INSERT INTO responses (survey_id, school, user_id, data, created) VALUES (?, ?, NULL, ?, ?)').bind(S.id, S.school, JSON.stringify(data), Date.now()).run();
+  await env.DATA?.put(lk, String(n + 1), { expirationTtl: 3600 });
+  return json({ ok: true });
 }

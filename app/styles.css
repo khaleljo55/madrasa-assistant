@@ -702,3 +702,8 @@ label.hud-sw::after { content: '＋'; position: absolute; inset: 0; display: gri
 .cm-dm-list { padding: 6px; max-height: 64vh; overflow: auto; }
 .cm-dm-list .li.on { background: var(--brand-soft); border-radius: 10px; }
 @media (max-width: 800px) { .cm-dm { grid-template-columns: 1fr; } }
+/* 📝 الاستبيانات (1.9.0) */
+.sv-fields { display: grid; gap: 10px; margin-bottom: 10px; }
+.sv-f { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #fbfcfc; }
+.sv-n { width: 28px; height: 28px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-weight: 700; flex: none; }
+.sv-ctl { display: flex; flex-direction: column; gap: 2px; }

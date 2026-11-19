@@ -79,6 +79,10 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));
 });
 `);
+// ───── صفحة تعبئة الاستبيانات برابط عام …/survey/ (1.9.0) ─────
+{ const SVD = path.join(OUT, 'survey'); fs.mkdirSync(SVD, { recursive: true });
+  for (const f of ['index.html', 'survey.js']) fs.copyFileSync(path.join(__dirname, 'survey', f), path.join(SVD, f));
+  fs.copyFileSync(path.join(__dirname, 'staff', 'staff.css'), path.join(SVD, 'staff.css')); }
 // ───── تطبيق «تواصل المدرسة» للمنسوبات: رابط مستقل …/staff/ (1.5.0) ─────
 // وتطبيق «تواصل الطالبات»: الشفرة نفسها بوضع الطالبات …/student/ (1.6.0)
 const SRC = path.join(__dirname, 'staff');

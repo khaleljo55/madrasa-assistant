@@ -4,7 +4,7 @@
 // كل مجموعة أجهزة مرتبطة = «قناة» معرّفها مشتق من المفتاح، وتحميها كلمة عبور مشتقة منه أيضاً (يُحفظ هنا تجزئتها فقط).
 // الخادم خاص: يقبل عدداً محدوداً من القنوات (MAX_CHANNELS) حتى لا يستغله غير أصحابه.
 
-import { staffApi, staffAdmin, flushPush } from './staff.js';
+import { staffApi, staffAdmin, flushPush, surveyPublic } from './staff.js';
 
 const MAX_VALUE = 24 * 1024 * 1024; // حد Workers KV للقيمة الواحدة 25 ميجابايت
 const CORS = {
@@ -96,6 +96,9 @@ export default {
   async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
+    if (url.pathname.startsWith('/sv/')) {
+      try { return await surveyPublic(req, env, ctx, url, json); } catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
+    }
     if (url.pathname.startsWith('/st/')) {
       try { return await staffApi(req, env, ctx, url, json, async (id) => !!(await env.DATA.get('ch:' + id)), pushSender(env), (school, title, text) => pushSend(env, school, [cleanMsg({ title, body: text, url: './#go=comms', tag: 'comms' })])); }
       catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
@@ -137,7 +140,7 @@ export default {
       return json({ items: box });
     }
     const pm = url.pathname.match(/^\/v1\/([0-9a-f]{32})\/push\/(plan|sub|test)(?:\/([0-9a-f]{32}))?$/);
-    const sa = url.pathname.match(/^\/v1\/([0-9a-f]{32})\/staff\/([a-z0-9/]{2,60})$/);
+    const sa = url.pathname.match(/^\/v1\/([0-9a-f]{32})\/staff\/([a-z0-9/]{2,80})$/);
     const m = pm ? [null, pm[1], null, null] : sa ? [null, sa[1], null, null] : url.pathname.match(/^\/v1\/([0-9a-f]{32})\/(?:o\/(.+)|(list))$/);
     if (!m) return json({ error: 'not_found' }, 404);
     const id = m[1];

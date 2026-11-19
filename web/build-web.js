@@ -50,7 +50,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), `// المساعد الإداري ${ve
 const CACHE = 'madrasa-${ver}-${Date.now().toString(36)}';
 const SHELL = ${JSON.stringify(shell)};
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
-self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hud-push' && !k.startsWith('staff')).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hud-push' && !k.startsWith('staff') && !k.startsWith('student')).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 // إشعارات هدهد: التنبيه يصل دون محتوى، ثم يُجلب نصه من صندوق هذا الجوال في خادم المزامنة
 self.addEventListener('push', (e) => e.waitUntil((async () => {
   let items = [];
@@ -76,13 +76,20 @@ self.addEventListener('fetch', (e) => {
 });
 `);
 // ───── تطبيق «تواصل المدرسة» للمنسوبات: رابط مستقل …/staff/ (1.5.0) ─────
-const SD = path.join(OUT, 'staff'), SRC = path.join(__dirname, 'staff');
-fs.mkdirSync(SD, { recursive: true });
-for (const f of ['index.html', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png']) fs.copyFileSync(path.join(SRC, f), path.join(SD, f));
-fs.writeFileSync(path.join(SD, 'manifest.webmanifest'), JSON.stringify({
-  name: 'تواصل المدرسة', short_name: 'تواصل المدرسة', lang: 'ar', dir: 'rtl', id: './', start_url: './', scope: './', display: 'standalone', orientation: 'portrait',
-  background_color: '#f4f6f5', theme_color: '#0f6b5c',
-  icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
-}, null, 2));
-fs.writeFileSync(path.join(SD, 'sw.js'), fs.readFileSync(path.join(SRC, 'sw.js.tpl'), 'utf8').replace(/__VER__/g, ver + '-' + Date.now().toString(36)));
+// وتطبيق «تواصل الطالبات»: الشفرة نفسها بوضع الطالبات …/student/ (1.6.0)
+const SRC = path.join(__dirname, 'staff');
+for (const [dir, mode, name, color] of [['staff', 'staff', 'تواصل المدرسة', '#0f6b5c'], ['student', 'student', 'تواصل الطالبات', '#7e22ce']]) {
+  const SD = path.join(OUT, dir); fs.mkdirSync(SD, { recursive: true });
+  for (const f of ['staff.js', 'staff.css']) fs.copyFileSync(path.join(SRC, f), path.join(SD, f));
+  const icons = mode === 'student' ? path.join(__dirname, 'student') : SRC;
+  for (const f of ['icon-192.png', 'icon-512.png']) fs.copyFileSync(path.join(icons, f), path.join(SD, f));
+  fs.writeFileSync(path.join(SD, 'mode.js'), `window.APP_MODE = '${mode}';\n`);
+  fs.writeFileSync(path.join(SD, 'index.html'), fs.readFileSync(path.join(SRC, 'index.html'), 'utf8').replace(/تواصل المدرسة/g, name).replace(/#0f6b5c/g, color));
+  fs.writeFileSync(path.join(SD, 'manifest.webmanifest'), JSON.stringify({
+    name, short_name: name, lang: 'ar', dir: 'rtl', id: './', start_url: './', scope: './', display: 'standalone', orientation: 'portrait',
+    background_color: '#f4f6f5', theme_color: color,
+    icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+  }, null, 2));
+  fs.writeFileSync(path.join(SD, 'sw.js'), fs.readFileSync(path.join(SRC, 'sw.js.tpl'), 'utf8').replace(/__VER__/g, ver + '-' + Date.now().toString(36)).replace(/__P__/g, mode).replace(/__NAME__/g, name));
+}
 console.log(`✓ نسخة الجوال ${ver} جاهزة في dist-web (${files.length + 4} ملفات)`);

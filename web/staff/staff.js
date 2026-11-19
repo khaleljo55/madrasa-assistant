@@ -1,12 +1,18 @@
 // ═════════════ 📲 تطبيق «تواصل المدرسة» للمعلمات والإداريات (1.5.0) ═════════════
 // يُفتح من رابط ترسله الأستاذة: …/staff/#s=<معرّف المدرسة>&r=<رابط الخادم>&n=<اسم المدرسة>
 // كلمة المرور لا تغادر الجهاز: يُرسل ناتج PBKDF2 فقط.
+const MODE = window.APP_MODE === 'student' ? 'student' : 'staff'; // التطبيق نفسه بوضعين: المنسوبات (staff/) والطالبات (student/)
 const $ = (s) => document.querySelector(s);
+if (MODE === 'student') { const r = document.documentElement.style; r.setProperty('--brand', '#7e22ce'); r.setProperty('--brand-2', '#9333ea'); r.setProperty('--soft', '#f3e8ff'); }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const LS = { get(k) { try { return JSON.parse(localStorage.getItem('staff:' + k)); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem('staff:' + k) : localStorage.setItem('staff:' + k, JSON.stringify(v)); } catch { } } };
+const LS = { get(k) { try { return JSON.parse(localStorage.getItem(MODE + ':' + k)); } catch { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(MODE + ':' + k) : localStorage.setItem(MODE + ':' + k, JSON.stringify(v)); } catch { } } };
 const S = { cfg: LS.get('cfg'), tok: LS.get('tok'), user: LS.get('user'), pend: LS.get('pend'), tab: 'inbox', inbox: [], chat: [], open: null, authTab: 'login', busy: false, err: '' };
 const RELAY_RE = /^(https:\/\/[a-z0-9.-]+\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/i;
-const ROLE = { teacher: 'معلمة', admin: 'إدارية' };
+const ROLE = { teacher: 'معلمة', admin: 'إدارية', student: 'طالبة' };
+const APP = MODE === 'student' ? 'تواصل الطالبات' : 'تواصل المدرسة', LOGO = MODE === 'student' ? '🎒' : '💬';
+const isStu = () => S.user?.role === 'student';
+const dayFmt = (d) => { if (!d) return ''; const x = new Date(d + 'T12:00:00'); return x.toLocaleDateString('ar-SA-u-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' }); };
+const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
 // قراءة رابط المدرسة
 (function readLink() {
@@ -42,15 +48,19 @@ const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" tar
 // ───── الشاشات ─────
 function render() {
   const app = $('#app');
-  if (!S.cfg) { app.innerHTML = `<div class="center"><div class="logo">💬</div><h1>تواصل المدرسة</h1><p class="muted">افتحي رابط التسجيل الذي أرسلته لكِ إدارة المدرسة.</p></div>`; return; }
+  document.title = APP;
+  if (!S.cfg) { app.innerHTML = `<div class="center"><div class="logo">${LOGO}</div><h1>${APP}</h1><p class="muted">افتحي رابط التسجيل الذي أرسلته لكِ إدارة المدرسة.</p></div>`; return; }
   const school = S.cfg.n ? `<div class="school">${esc(S.cfg.n)}</div>` : '';
   if (!S.tok) {
     if (S.pend) { app.innerHTML = `<div class="center"><div class="logo">⏳</div><h1>طلبكِ قيد المراجعة</h1>${school}<p class="muted">أرسلنا طلب عضويتكِ باسم المستخدم <b dir="ltr">${esc(S.pend.username)}</b>. ستتمكنين من الدخول فور قبوله من إدارة المدرسة.</p><button class="btn primary" data-act="checkPend">تحققي الآن</button><button class="btn link" data-act="cancelPend">الدخول بحساب آخر</button>${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}</div>`; return; }
     const reg = S.authTab === 'reg';
-    app.innerHTML = `<div class="auth"><div class="logo">💬</div><h1>تواصل المدرسة</h1>${school}
+    app.innerHTML = `<div class="auth"><div class="logo">${LOGO}</div><h1>${APP}</h1>${school}
       <div class="seg"><button class="${!reg ? 'on' : ''}" data-act="authTab" data-id="login">الدخول</button><button class="${reg ? 'on' : ''}" data-act="authTab" data-id="reg">تسجيل جديد</button></div>
       <form id="authForm" autocomplete="on">
-        ${reg ? `<label>الاسم الكامل<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
+        ${reg && MODE === 'student' ? `<label>اسم الطالبة الرباعي<input name="name" required minlength="3" maxlength="80"></label>
+        <label>الصف والفصل<input name="cls" required maxlength="30" placeholder="مثال: الثالث / 2"></label>
+        <label>جوال ولي الأمر (اختياري)<input name="phone" type="tel" dir="ltr" inputmode="tel" maxlength="15" autocomplete="tel"></label>` : ''}
+        ${reg && MODE !== 'student' ? `<label>الاسم الكامل<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
         <label>الصفة<select name="role" required><option value="">اختاري…</option><option value="teacher">معلمة</option><option value="admin">إدارية</option></select></label>
         <label>رقم الجوال (اختياري)<input name="phone" type="tel" dir="ltr" inputmode="tel" maxlength="15" autocomplete="tel"></label>` : ''}
         <label>اسم المستخدم (بالإنجليزي)<input name="username" required dir="ltr" autocapitalize="none" autocomplete="username" pattern="[A-Za-z0-9._\\-]{3,40}" placeholder="مثال: noura.s"></label>
@@ -62,18 +72,25 @@ function render() {
       </form></div>`;
     return;
   }
-  const unread = S.inbox.filter((m) => !m.read_at).length;
-  const tabs = [['inbox', '📬', 'الرسائل', unread], ...(S.user?.chat ? [['chat', '💬', 'المحادثة', 0]] : []), ['me', '👤', 'حسابي', 0]];
+  const notes = S.inbox.filter((m) => m.kind !== 'req'), reqs = S.inbox.filter((m) => m.kind === 'req');
+  const unread = notes.filter((m) => !m.read_at).length, todo = reqs.filter((m) => !m.done_at && !m.ok_at).length;
+  const tabs = isStu() ? [['reqs', '📋', 'المطلوب', todo], ['inbox', '🔔', 'التذكيرات', unread], ...(S.user?.chat ? [['chat', '💬', 'الإدارة', 0]] : []), ['me', '👤', 'حسابي', 0]]
+    : [['inbox', '📬', 'الرسائل', unread], ...(reqs.length ? [['reqs', '📋', 'المطلوب', todo]] : []), ...(S.user?.chat ? [['chat', '💬', 'المحادثة', 0]] : []), ['me', '👤', 'حسابي', 0]];
+  if (S.tab === 'inbox' && isStu() && !S.tabSet) { S.tab = 'reqs'; S.tabSet = true; }
   if (!tabs.some((t) => t[0] === S.tab)) S.tab = 'inbox';
   let body = '';
-  if (S.tab === 'inbox') body = S.inbox.length ? `<div class="list">${S.inbox.map((m) => `<div class="msg ${m.read_at ? '' : 'new'} ${S.open === m.id ? 'open' : ''}" data-act="openMsg" data-id="${m.id}"><div class="mh"><b>${esc(m.title || 'رسالة')}</b><span class="t">${fmt(m.created)}</span></div><div class="from">${esc(m.sender_name)}</div><div class="mb">${S.open === m.id ? linkify(m.body) : esc(String(m.body).slice(0, 120))}</div></div>`).join('')}</div>` : '<div class="empty">📭<p>لا رسائل بعد</p></div>';
-  else if (S.tab === 'chat') body = `<div class="chat" id="chatBox">${S.chat.length ? S.chat.map((m) => `<div class="bub ${m.mine ? 'mine' : ''} ${m.sender === 'admin' ? 'adm' : ''}">${m.mine ? '' : `<div class="who">${esc(m.sender_name)}</div>`}<div>${linkify(m.body)}</div><div class="t">${fmt(m.created)}</div></div>`).join('') : '<div class="empty">💬<p>ابدئي المحادثة</p></div>'}</div>
+  const t0 = todayStr();
+  if (S.tab === 'reqs') body = reqs.length ? `<div class="list">${reqs.map((m) => { const late = m.due && m.due < t0 && !m.done_at && !m.ok_at, st = m.ok_at ? '<span class="st ok">✅ استلمتها الإدارة</span>' : m.done_at ? '<span class="st wait">⏳ أبلغتِ أنكِ أنجزتِه</span>' : late ? '<span class="st late">⚠️ تأخر الموعد</span>' : '<span class="st todo">مطلوب</span>';
+      return `<div class="msg req ${m.ok_at ? 'okd' : ''}"><div class="mh"><b>${esc(m.title || 'طلب')}</b>${st}</div>${m.body && m.body !== m.title ? `<div class="mb" style="display:block">${linkify(m.body)}</div>` : ''}${m.due ? `<div class="due ${late ? 'late' : ''}">📅 آخر موعد: ${dayFmt(m.due)}</div>` : ''}
+        ${m.ok_at ? '' : `<button class="btn ${m.done_at ? '' : 'primary'} sm" data-act="done" data-id="${m.id}">${m.done_at ? '↩ لم أنجزه بعد' : '✓ أنجزته / أحضرته'}</button>`}</div>`; }).join('')}</div>` : '<div class="empty">🎉<p>لا يوجد شيء مطلوب منكِ الآن</p></div>';
+  if (S.tab === 'inbox') body = notes.length ? `<div class="list">${notes.map((m) => `<div class="msg ${m.read_at ? '' : 'new'} ${S.open === m.id ? 'open' : ''}" data-act="openMsg" data-id="${m.id}"><div class="mh"><b>${esc(m.title || 'رسالة')}</b><span class="t">${fmt(m.created)}</span></div><div class="from">${esc(m.sender_name)}${m.remind_at ? ` · 🔔 ${m.remind_at > Date.now() ? 'تذكير ' : ''}${fmt(m.remind_at)}` : ''}</div><div class="mb">${S.open === m.id ? linkify(m.body) : esc(String(m.body).slice(0, 120))}</div></div>`).join('')}</div>` : `<div class="empty">📭<p>${isStu() ? 'لا تذكيرات بعد' : 'لا رسائل بعد'}</p></div>`;
+  else if (S.tab === 'chat') body = `<div class="chat" id="chatBox">${S.chat.length ? S.chat.map((m) => `<div class="bub ${m.mine ? 'mine' : ''} ${m.sender === 'admin' ? 'adm' : ''}">${m.mine ? '' : `<div class="who">${esc(m.sender_name)}</div>`}<div>${linkify(m.body)}</div><div class="t">${fmt(m.created)}</div></div>`).join('') : `<div class="empty">💬<p>${isStu() ? 'اكتبي رسالتكِ للإدارة' : 'ابدئي المحادثة'}</p></div>`}</div>
     <form id="chatForm" class="chat-in"><textarea name="body" rows="1" maxlength="4000" placeholder="اكتبي رسالة…" required></textarea><button class="btn primary" type="submit">إرسال</button></form>`;
-  else body = `<div class="card"><h3>${esc(S.user?.name || '')}</h3><p class="muted">${ROLE[S.user?.role] || ''} · <span dir="ltr">${esc(S.user?.username || '')}</span></p></div>
+  else if (S.tab === 'me') body = `<div class="card"><h3>${esc(S.user?.name || '')}</h3><p class="muted">${ROLE[S.user?.role] || ''}${S.user?.cls ? ' · ' + esc(S.user.cls) : ''} · <span dir="ltr">${esc(S.user?.username || '')}</span></p></div>
     <div class="card" id="pushCard"><h3>🔔 الإشعارات</h3><div id="pushState" class="muted">…</div></div>
     <div class="card"><h3>🔑 تغيير كلمة المرور</h3><form id="passForm"><label>كلمة المرور الجديدة<input name="pass" type="password" minlength="6" required dir="ltr" autocomplete="new-password"></label><button class="btn" type="submit">حفظ</button></form></div>
     <button class="btn danger wide" data-act="logout">تسجيل الخروج</button>`;
-  app.innerHTML = `<header><div><b>تواصل المدرسة</b>${S.cfg.n ? `<span>${esc(S.cfg.n)}</span>` : ''}</div></header>
+  app.innerHTML = `<header><div><b>${APP}</b>${S.cfg.n ? `<span>${esc(S.cfg.n)}</span>` : ''}</div></header>
     <main>${body}</main>
     <nav>${tabs.map(([k, ic, l, n]) => `<button class="${S.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}"><span class="ic">${ic}${n ? `<i>${n}</i>` : ''}</span>${l}</button>`).join('')}</nav>`;
   if (S.tab === 'chat') { const c = $('#chatBox'); if (c) c.scrollTop = c.scrollHeight; }
@@ -85,15 +102,15 @@ async function loadInbox() { const j = await api('/st/inbox'); S.inbox = j.items
 async function loadChat() { if (!S.user?.chat) { S.chat = []; return; } try { S.chat = (await api('/st/chat')).items || []; } catch (e) { if (e.code === 'no_chat') { S.user.chat = false; S.chat = []; } else throw e; } }
 async function refresh(quiet) {
   if (!S.tok) return;
-  const before = JSON.stringify([S.inbox.map((m) => m.id + ':' + !!m.read_at), S.chat.length, S.user?.chat]);
+  const before = JSON.stringify([S.inbox.map((m) => m.id + ':' + !!m.read_at + !!m.done_at + !!m.ok_at), S.chat.length, S.user?.chat]);
   try { await loadInbox(); if (S.tab === 'chat' || !quiet) await loadChat(); } catch (e) { if (!quiet) toast(e.message, 'err'); return; }
-  const after = JSON.stringify([S.inbox.map((m) => m.id + ':' + !!m.read_at), S.chat.length, S.user?.chat]);
+  const after = JSON.stringify([S.inbox.map((m) => m.id + ':' + !!m.read_at + !!m.done_at + !!m.ok_at), S.chat.length, S.user?.chat]);
   if (!quiet || before !== after) { const typing = document.activeElement?.name === 'body' ? document.activeElement.value : null; render(); if (typing) { const t = $('#chatForm textarea'); if (t) { t.value = typing; t.focus(); } } }
 }
 function logout(silent) {
   if (S.tok && !silent) api('/st/logout', { method: 'POST' }).catch(() => { });
   S.tok = null; S.user = null; S.inbox = []; S.chat = []; LS.set('tok', null); LS.set('user', null);
-  caches.delete('staff-push').catch(() => { }); render();
+  caches.delete(MODE + '-push').catch(() => { }); render();
 }
 async function doLogin(username, pass) {
   const j = await api(`/st/${S.cfg.s}/login`, { method: 'POST', body: JSON.stringify({ username, pass }) }, false);
@@ -107,7 +124,7 @@ async function doLogin(username, pass) {
 // ───── الإشعارات ─────
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-async function savePushCfg() { try { await (await caches.open('staff-push')).put('cfg', new Response(JSON.stringify({ url: S.cfg.r, tok: S.tok }))); } catch { } }
+async function savePushCfg() { try { await (await caches.open(MODE + '-push')).put('cfg', new Response(JSON.stringify({ url: S.cfg.r, tok: S.tok }))); } catch { } }
 async function pushState() {
   const el = $('#pushState'); if (!el) return;
   if (isIOS() && !standalone()) { el.innerHTML = 'لتصلكِ الإشعارات: اضغطي زر المشاركة ⬆️ ثم «إضافة إلى الشاشة الرئيسية»، وافتحي التطبيق من الأيقونة.'; return; }
@@ -143,6 +160,7 @@ document.addEventListener('click', async (e) => {
   }
   if (a === 'logout') { if (confirm('تسجيل الخروج من هذا الجوال؟')) logout(); }
   if (a === 'pushOn') pushOn();
+  if (a === 'done') { const m = S.inbox.find((x) => String(x.id) === id); if (!m) return; const d = !m.done_at; m.done_at = d ? Date.now() : null; render(); api('/st/done', { method: 'POST', body: JSON.stringify({ id: m.id, done: d }) }).then(() => d && toast('✓ أُبلغت الإدارة', 'ok')).catch((err) => { toast(err.message, 'err'); m.done_at = d ? null : Date.now(); render(); }); }
   if (a === 'checkPend') { S.err = ''; try { const r = await doLogin(S.pend.username, S.pend.pass); if (r === 'pending') { S.err = 'ما زال الطلب قيد المراجعة'; render(); } } catch (err) { S.err = err.message; render(); } }
   if (a === 'cancelPend') { S.pend = null; LS.set('pend', null); S.authTab = 'login'; render(); }
 });
@@ -157,7 +175,7 @@ document.addEventListener('submit', async (e) => {
     try {
       const pass = await passHash(username, String(d.pass));
       if (reg) {
-        await api(`/st/${S.cfg.s}/register`, { method: 'POST', body: JSON.stringify({ username, pass, name: String(d.name).trim(), role: d.role, phone: d.phone }) }, false);
+        await api(`/st/${S.cfg.s}/register`, { method: 'POST', body: JSON.stringify({ username, pass, name: String(d.name).trim(), role: MODE === 'student' ? 'student' : d.role, phone: d.phone, cls: d.cls }) }, false);
         S.pend = { username, pass }; LS.set('pend', S.pend);
       } else if ((await doLogin(username, pass)) === 'pending') { S.pend = { username, pass }; LS.set('pend', S.pend); }
     } catch (err) { S.err = err.message; }
@@ -177,7 +195,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function goHash(h) {
   h = String(h || location.hash);
   if (/#chat/.test(h) && S.user?.chat) { S.tab = 'chat'; loadChat().then(render).catch(() => { }); }
-  const m = h.match(/#m(\d+)/); if (m) { S.tab = 'inbox'; S.open = Number(m[1]); const x = S.inbox.find((i) => i.id === S.open); if (x && !x.read_at) { x.read_at = Date.now(); api('/st/read', { method: 'POST', body: JSON.stringify({ ids: [x.id] }) }).catch(() => { }); } }
+  const m = h.match(/#m(\d+)/); if (m) { S.tab = S.inbox.find((i) => i.id === Number(m[1]))?.kind === 'req' ? 'reqs' : 'inbox'; S.open = Number(m[1]); const x = S.inbox.find((i) => i.id === S.open); if (x && !x.read_at) { x.read_at = Date.now(); api('/st/read', { method: 'POST', body: JSON.stringify({ ids: [x.id] }) }).catch(() => { }); } }
   if (/#(chat|m\d+)/.test(location.hash)) history.replaceState(null, '', location.pathname);
   render();
 }

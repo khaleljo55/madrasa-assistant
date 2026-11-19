@@ -97,7 +97,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
     if (url.pathname.startsWith('/st/')) {
-      try { return await staffApi(req, env, ctx, url, json, async (id) => !!(await env.DATA.get('ch:' + id)), pushSender(env)); }
+      try { return await staffApi(req, env, ctx, url, json, async (id) => !!(await env.DATA.get('ch:' + id)), pushSender(env), (school, title, text) => pushSend(env, school, [cleanMsg({ title, body: text, url: './#go=comms', tag: 'comms' })])); }
       catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
     }
     if (url.pathname === '/' || url.pathname === '/v1') return json({ ok: true, app: 'madrasa-sync', v: 3, push: true, staff: !!env.DB });

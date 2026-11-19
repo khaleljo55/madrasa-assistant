@@ -25,7 +25,7 @@ async function acFetch(path, opt = {}) {
 async function acCheck(email = acEmail()) {
   if (!email || AC.checking || !RL_URL.test(acUrl())) return null;
   AC.checking = true;
-  try { const { aid } = { aid: rlHex(await rlSha('madrasa-acct-id:' + acNorm(email))).slice(0, 32) }; AC.exists = (await acFetch('/acct/' + aid)).exists; } catch { AC.exists = null; }
+  try { const aid = rlHex(await rlSha('madrasa-acct-id:' + acNorm(email))).slice(0, 32), r = await acFetch('/acct/' + aid); AC.exists = r.exists; AC.ch = r.ch || ''; } catch { AC.exists = null; }
   AC.checking = false; return AC.exists;
 }
 // إنشاء الحساب أو تغيير كلمة المرور (من جهاز مرتبط فقط)
@@ -44,8 +44,24 @@ async function acLogin(email, pass) {
   const u8 = rlUnb64u(blob);
   let cfg; try { cfg = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u8.slice(0, 12) }, key, u8.slice(12)))); } catch { throw new Error('تعذّر فتح الحساب'); }
   const c = rlParse(rlCode({ url: cfg.u, k: cfg.k })); if (!c) throw new Error('بيانات الحساب غير صالحة');
+  const had = Sync.hasLocalData();
   await rlJoin(c, 'manual');
-  db.settings.acctEmail = acNorm(email); if (!Sync.conflict) commit(false);
+  AC.ch = RELAY.id; AC.exists = true;
+  // في الجهاز بيانات أيضاً: تُدمج تلقائياً (مع نسخة احتياطية قبلها) حتى لا يضيع شيء من الجهازين
+  for (let i = 0; i < 100 && typeof MG !== 'undefined' && MG.busy; i++) await new Promise((r) => setTimeout(r, 100));
+  if (Sync.conflict) await ACTIONS.syncMerge();
+  if (had) { db.settings.acctEmail = acNorm(email); commit(false); return 'merged'; }
+  db.settings.acctEmail = acNorm(email); commit(false); return 'loaded';
+}
+// إنشاء حساب المدرسة من هذا الجهاز (أول جهاز فقط)
+async function acCreate(email, pass) {
+  if (await acCheck(email)) throw Object.assign(new Error('يوجد حساب مدرسة بهذا البريد، سجّلي الدخول به'), { code: 'exists' });
+  db.settings.acctEmail = acNorm(email);
+  Sync.appCfg = { ...(Sync.appCfg || {}), syncRelay: Sync.appCfg?.syncRelay || window.MADRASA_RELAY || '' };
+  AC.creating = true;
+  try { await _acCreate(); } finally { AC.creating = false; }
+  if (!rlOn()) throw new Error('تعذّر إنشاء الحساب، تأكدي من الإنترنت');
+  closeModal(); await acSet(email, pass); AC.ch = RELAY.id;
 }
 
 function acModal(mode) {
@@ -71,8 +87,13 @@ Object.assign(ACTIONS, {
     el.disabled = true; el.textContent = '⏳'; err.textContent = '';
     try {
       if (el.dataset.id === 'set') { await acSet(email, pass); closeModal(); toast('✓ صار بإمكانكِ الدخول من أي جهاز بهذا البريد وكلمة المرور', 'ok'); render(); }
-      else { el.textContent = '⏳ جارٍ الدخول…'; await acLogin(email, pass); closeModal(); toast(Sync.conflict ? 'في هذا الجهاز بيانات أيضاً: اختاري «دمج البيانات» من الشريط أعلى الصفحة' : '✓ تم الدخول وحُمّلت بياناتكِ', 'ok'); render(); }
-    } catch (e) { if ($('#acErr')) { $('#acErr').textContent = e.message; el.disabled = false; el.textContent = el.dataset.id === 'set' ? 'حفظ' : 'دخول'; } else toast(e.message, 'err'); }
+      else if (el.dataset.id === 'create') { el.textContent = '⏳ جارٍ الإنشاء…'; await acCreate(email, pass); closeModal(); toast('✓ أُنشئ حساب المدرسة. ادخلي بالبريد وكلمة المرور نفسيهما من أي جهاز آخر', 'ok'); render(); }
+      else { el.textContent = '⏳ جارٍ الدخول…'; const r = await acLogin(email, pass); closeModal(); toast(r === 'merged' ? '🔀 تم الدخول ودُمجت بيانات هذا الجهاز مع بيانات الحساب، دون أن يضيع شيء' : '✓ تم الدخول وحُمّلت بياناتكِ', 'ok'); render(); }
+    } catch (e) {
+      if (!$('#acErr')) return toast(e.message, 'err');
+      $('#acErr').innerHTML = esc(e.message) + (e.code === 'no_account' ? `<div style="margin-top:10px;color:var(--ink);font-weight:400">إن كان هذا أول جهاز للمدرسة، أنشئي الحساب الآن بهذا البريد وكلمة المرور:</div><button class="btn primary sm" style="margin-top:6px" data-act="acGo" data-id="create">✨ إنشاء حساب المدرسة</button>` : '');
+      el.disabled = false; el.textContent = el.dataset.id === 'set' ? 'حفظ' : el.dataset.id === 'create' ? '✨ إنشاء حساب المدرسة' : 'دخول';
+    }
   },
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest?.('#acForm')) { e.preventDefault(); $('[data-act=acGo]')?.click(); } });
@@ -83,7 +104,7 @@ ACTIONS.rlCreate = async (...a) => {
   const em = acEmail();
   if (em && (await acCheck(em))) { toast('يوجد حساب مدرسة لهذا البريد: سجّلي الدخول به بدل إنشاء حساب جديد', 'err'); return acModal('login'); }
   await _acCreate(...a);
-  if (rlOn()) setTimeout(() => acModal('set'), 300);
+  if (rlOn() && !AC.creating) setTimeout(() => acModal('set'), 300);
 };
 
 // بطاقة المزامنة: الدخول أولاً، وكلمة المرور للأجهزة المرتبطة
@@ -102,9 +123,11 @@ relayCard = function () {
 const _acBar = renderSyncBar;
 renderSyncBar = function () {
   _acBar();
-  const el = $('#syncBar'); if (!el || !db || rlOn() || Sync.conflict || AC.hide || (!IS_WEBAPP && Sync.status === 'on')) return;
-  el.insertAdjacentHTML('beforeend', `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px;flex-wrap:wrap"><span class="big">🔑</span><div><b>ادخلي بحساب المدرسة لتظهر بياناتكِ هنا</b><div class="muted">بالبريد وكلمة المرور نفسيهما من أي جهاز، دون رمز ربط.</div></div><span class="spacer"></span><button class="btn primary sm" data-act="acLoginOpen">🔑 تسجيل الدخول</button><button class="btn sm" data-act="acHide">لاحقاً</button></div>`);
+  const el = $('#syncBar'); if (!el || !db || Sync.conflict || AC.hide) return;
+  const other = rlOn() && AC.exists && AC.ch && AC.ch !== RELAY.id; // هذا الجهاز على حساب منفصل قديم، والحساب الأساسي في جهاز آخر
+  if (!other && (rlOn() || (!IS_WEBAPP && Sync.status === 'on' && !AC.exists))) return;
+  el.insertAdjacentHTML('beforeend', `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px;flex-wrap:wrap"><span class="big">🔑</span><div><b>${other || (mgCount(db) > 0 && AC.exists) ? 'ادخلي بحساب المدرسة لدمج بيانات هذا الجهاز مع بياناتكِ الأساسية' : 'ادخلي بحساب المدرسة لتظهر بياناتكِ هنا'}</b><div class="muted">${other || (mgCount(db) > 0 && AC.exists) ? 'يُجمع ما في هذا الجهاز مع ما أضفتِه في أجهزتكِ الأخرى دون أن يضيع شيء، مع نسخة احتياطية قبلها.' : 'بالبريد وكلمة المرور نفسيهما من أي جهاز، دون رمز ربط.'}</div></div><span class="spacer"></span><button class="btn primary sm" data-act="acLoginOpen">🔑 تسجيل الدخول</button><button class="btn sm" data-act="acHide">لاحقاً</button></div>`);
 };
 ACTIONS.acHide = () => { AC.hide = true; renderSyncBar(); };
 // جهاز مرتبط بلا كلمة مرور بعد: تذكير لطيف مرة في الإعدادات (يظهر في البطاقة)، ومعرفة وجود الحساب مسبقاً
-(function acStart() { if (!db || typeof RELAY === 'undefined') return setTimeout(acStart, 600); renderSyncBar(); setTimeout(() => acCheck().then(() => { if (ui.view === 'settings') render(); }), 4000); })();
+(function acStart() { if (!db || typeof RELAY === 'undefined') return setTimeout(acStart, 600); renderSyncBar(); setTimeout(() => acCheck().then(() => { renderSyncBar(); if (ui.view === 'settings') render(); }), 3000); setInterval(() => { if (!document.hidden) acCheck().then(renderSyncBar); }, 30 * 60000); })();

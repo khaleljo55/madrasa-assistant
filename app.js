@@ -352,8 +352,8 @@ function renderSyncBar() {
   const c = Sync.conflict;
   if (c) {
     const when = c.meta?.updatedAt ? new Date(c.meta.updatedAt).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-    el.innerHTML = `<div class="banner" style="margin:0 28px 10px"><span class="big">🔄</span><div><b>توجد بيانات أحدث محفوظة من جهاز آخر</b><div class="muted">آخر تعديل عليها: ${when}. اختاري أي نسخة تريدين الاحتفاظ بها.</div></div><span class="spacer"></span>
-      <button class="btn primary" data-act="syncUseRemote">تحميل بيانات الجهاز الآخر</button><button class="btn" data-act="syncUseLocal">الاحتفاظ ببيانات هذا الجهاز</button></div>`;
+    el.innerHTML = `<div class="banner" style="margin:0 28px 10px;flex-wrap:wrap"><span class="big">🔄</span><div><b>في الجهازين بيانات مختلفة</b><div class="muted">آخر تعديل في الجهاز الآخر: ${when}. «الدمج» يجمع بيانات الجهازين معاً دون أن يضيع شيء، مع حفظ نسخة احتياطية قبلها.</div></div><span class="spacer"></span>
+      <button class="btn primary" data-act="syncMerge">🔀 دمج البيانات (موصى به)</button><details class="adv" style="display:inline-block"><summary class="btn sm" style="list-style:none">خيارات أخرى</summary><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" data-act="syncUseRemote">استبدال بيانات هذا الجهاز ببيانات الآخر</button><button class="btn sm" data-act="syncUseLocal">استبدال بيانات الجهاز الآخر ببيانات هذا الجهاز</button></div></details></div>`;
   } else if (Sync.status === 'mismatch') {
     const f = Sync.mismatch?.found;
     el.innerHTML = `<div class="banner" style="margin:0 28px 10px;padding:10px 16px"><span>🔒</span><div><b>المزامنة متوقفة لحماية البيانات</b><div class="muted">${f ? `OneDrive على هذا الجهاز مسجّل بحساب <span dir="ltr">${esc(f)}</span>` : 'لا يوجد OneDrive مسجّل على هذا الجهاز'}، والحساب المطلوب <span dir="ltr">${esc(Sync.wantEmail())}</span>. سجّلي الدخول إلى OneDrive بالحساب المطلوب ثم اضغطي «إعادة الفحص».</div></div><span class="spacer"></span><button class="btn sm primary" data-act="syncRecheck">إعادة الفحص</button><button class="btn sm" data-act="setGo" data-id="sync">إعدادات المزامنة</button></div>`;

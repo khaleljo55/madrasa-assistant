@@ -1,5 +1,5 @@
-// تواصل المدرسة 1.10.0-mwnlnyq4
-const P = 'staff', CACHE = P + '-1.10.0-mwnlnyq4';
+// تواصل المدرسة 1.11.0-mwnm30fp
+const P = 'staff', CACHE = P + '-1.11.0-mwnm30fp';
 const SHELL = ['./', 'index.html', 'mode.js', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith(P + '-') && k !== CACHE && k !== P + '-push').map((k) => caches.delete(k)))).then(() => self.clients.claim())));

@@ -4,6 +4,8 @@
 // كل مجموعة أجهزة مرتبطة = «قناة» معرّفها مشتق من المفتاح، وتحميها كلمة عبور مشتقة منه أيضاً (يُحفظ هنا تجزئتها فقط).
 // الخادم خاص: يقبل عدداً محدوداً من القنوات (MAX_CHANNELS) حتى لا يستغله غير أصحابه.
 
+import { staffApi, staffAdmin, flushPush } from './staff.js';
+
 const MAX_VALUE = 24 * 1024 * 1024; // حد Workers KV للقيمة الواحدة 25 ميجابايت
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +59,19 @@ async function pushSend(env, id, msgs) {
   }
   return sent;
 }
+// مُرسِل إشعار بلا محتوى، مع توقيع واحد لكل خدمة إشعارات في الطلب
+function pushSender(env) {
+  const cache = new Map();
+  return async (endpoint) => {
+    if (!okEndpoint(endpoint)) return 410;
+    try {
+      const aud = new URL(endpoint).origin;
+      if (!cache.has(aud)) cache.set(aud, await vapidHeader(endpoint, await vapid(env)));
+      const r = await fetch(endpoint, { method: 'POST', headers: { Authorization: cache.get(aud), TTL: '43200', Urgency: 'high', 'Content-Length': '0' } });
+      return r.status;
+    } catch { return 0; }
+  };
+}
 const cleanMsg = (m) => ({ title: String(m.title || 'هدهد 👧').slice(0, 80), body: String(m.body || '').slice(0, 300), url: /^\.\/(#go=[a-z]+)?$/.test(m.url || '') ? m.url : './', tag: String(m.tag || 'hud').slice(0, 60) });
 async function pushCron(env) {
   const plans = await env.DATA.list({ prefix: 'pp:' }), now = Date.now();
@@ -78,10 +93,14 @@ function safeEq(a, b) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
-    if (url.pathname === '/' || url.pathname === '/v1') return json({ ok: true, app: 'madrasa-sync', v: 2, push: true });
+    if (url.pathname.startsWith('/st/')) {
+      try { return await staffApi(req, env, ctx, url, json, async (id) => !!(await env.DATA.get('ch:' + id)), pushSender(env)); }
+      catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
+    }
+    if (url.pathname === '/' || url.pathname === '/v1') return json({ ok: true, app: 'madrasa-sync', v: 3, push: true, staff: !!env.DB });
     if (url.pathname === '/push/key' && req.method === 'GET') return json({ key: (await vapid(env)).pub });
     const ib = url.pathname.match(/^\/push\/inbox\/([0-9a-f]{32})$/);
     if (ib && req.method === 'GET') { // رقم الجوال السري (128 بت) هو مفتاح صندوقه
@@ -90,7 +109,8 @@ export default {
       return json({ items: box });
     }
     const pm = url.pathname.match(/^\/v1\/([0-9a-f]{32})\/push\/(plan|sub|test)(?:\/([0-9a-f]{32}))?$/);
-    const m = pm ? [null, pm[1], null, null] : url.pathname.match(/^\/v1\/([0-9a-f]{32})\/(?:o\/(.+)|(list))$/);
+    const sa = url.pathname.match(/^\/v1\/([0-9a-f]{32})\/staff\/([a-z0-9/]{2,60})$/);
+    const m = pm ? [null, pm[1], null, null] : sa ? [null, sa[1], null, null] : url.pathname.match(/^\/v1\/([0-9a-f]{32})\/(?:o\/(.+)|(list))$/);
     if (!m) return json({ error: 'not_found' }, 404);
     const id = m[1];
     let name = null;
@@ -104,6 +124,11 @@ export default {
     const reg = await env.DATA.get('ch:' + id, { cacheTtl: 300 });
     if (reg && !safeEq(reg, th)) return json({ error: 'forbidden' }, 403);
 
+    if (sa) {
+      if (!reg) return json({ error: 'not_found' }, 404);
+      try { return await staffAdmin(req, env, ctx, id, sa[2], json, pushSender(env)); }
+      catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
+    }
     if (pm) {
       if (!reg) return json({ error: 'not_found' }, 404);
       const [, , kind, sid] = pm;
@@ -160,5 +185,5 @@ export default {
     }
     return json({ error: 'method' }, 405);
   },
-  async scheduled(event, env, ctx) { ctx.waitUntil(pushCron(env)); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([pushCron(env), flushPush(env, pushSender(env)).catch(() => { })])); },
 };

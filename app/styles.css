@@ -686,3 +686,13 @@ label.hud-sw::after { content: '＋'; position: absolute; inset: 0; display: gri
 .hud-opts input[type=color] { width: 38px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0; vertical-align: middle; background: none; }
 @media (max-width: 700px) { .hud-set { grid-template-columns: 1fr; } .hud-prev { position: static; } .hud-bubble { width: calc(100vw - 40px); max-width: 300px; } body.hud-on #toasts { left: 20px; bottom: 90px; } }
 @media print { .hud { display: none !important; } }
+
+/* ═════════════ 📲 تطبيق التواصل (1.5.0) ═════════════ */
+.seg button .badge { display: inline-block; background: #e11d48; color: #fff; border-radius: 99px; font-size: 11px; line-height: 18px; padding: 0 6px; margin-inline-start: 4px; font-weight: 700; }
+.cm-chat { max-height: 56vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px; background: #f7faf9; border-radius: 12px; }
+.cm-bub { max-width: 75%; background: #fff; border: 1px solid var(--line); border-radius: 14px; border-start-start-radius: 4px; padding: 7px 11px; align-self: flex-start; overflow-wrap: anywhere; }
+.cm-bub.mine { align-self: flex-end; background: #dcf3ec; border-color: #c4e8dd; border-start-start-radius: 14px; border-start-end-radius: 4px; }
+.cm-bub .who { font-size: 12.5px; font-weight: 700; color: var(--brand); }
+.cm-bub .t { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.cm-del { border: 0; background: none; cursor: pointer; opacity: .35; font-size: 11px; padding: 0 2px; }
+.cm-bub:hover .cm-del { opacity: 1; }

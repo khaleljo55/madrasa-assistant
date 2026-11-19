@@ -14,3 +14,4 @@ cloud/wrangler.toml
 cloud/kv-id.txt
 cloud/relay-url.txt
 cloud/.wrangler/
+cloud/d1-id.txt

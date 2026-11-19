@@ -50,7 +50,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), `// المساعد الإداري ${ve
 const CACHE = 'madrasa-${ver}-${Date.now().toString(36)}';
 const SHELL = ${JSON.stringify(shell)};
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
-self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hud-push').map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hud-push' && !k.startsWith('staff')).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 // إشعارات هدهد: التنبيه يصل دون محتوى، ثم يُجلب نصه من صندوق هذا الجوال في خادم المزامنة
 self.addEventListener('push', (e) => e.waitUntil((async () => {
   let items = [];
@@ -75,4 +75,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((r) => r || fetch(e.request)));
 });
 `);
+// ───── تطبيق «تواصل المدرسة» للمنسوبات: رابط مستقل …/staff/ (1.5.0) ─────
+const SD = path.join(OUT, 'staff'), SRC = path.join(__dirname, 'staff');
+fs.mkdirSync(SD, { recursive: true });
+for (const f of ['index.html', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png']) fs.copyFileSync(path.join(SRC, f), path.join(SD, f));
+fs.writeFileSync(path.join(SD, 'manifest.webmanifest'), JSON.stringify({
+  name: 'تواصل المدرسة', short_name: 'تواصل المدرسة', lang: 'ar', dir: 'rtl', id: './', start_url: './', scope: './', display: 'standalone', orientation: 'portrait',
+  background_color: '#f4f6f5', theme_color: '#0f6b5c',
+  icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+}, null, 2));
+fs.writeFileSync(path.join(SD, 'sw.js'), fs.readFileSync(path.join(SRC, 'sw.js.tpl'), 'utf8').replace(/__VER__/g, ver + '-' + Date.now().toString(36)));
 console.log(`✓ نسخة الجوال ${ver} جاهزة في dist-web (${files.length + 4} ملفات)`);

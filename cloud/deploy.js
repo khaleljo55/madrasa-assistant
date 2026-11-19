@@ -7,9 +7,9 @@ const DIR = __dirname, ROOT = path.join(__dirname, '..');
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const WR = ['--yes', 'wrangler@4'];
 
-function run(args, { capture = false, quiet = false } = {}) {
+function run(args, { capture = false, quiet = false, noInput = false } = {}) {
   return new Promise((resolve) => {
-    const p = spawn(NPX, [...WR, ...args], { cwd: DIR, shell: process.platform === 'win32', stdio: capture ? ['inherit', 'pipe', 'pipe'] : 'inherit', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
+    const p = spawn(NPX, [...WR, ...args], { cwd: DIR, shell: process.platform === 'win32', stdio: capture ? [noInput ? 'ignore' : 'inherit', 'pipe', 'pipe'] : 'inherit', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
     let out = '';
     if (capture) {
       p.stdout.on('data', (d) => { out += d; if (!quiet) process.stdout.write(d); });
@@ -33,7 +33,7 @@ const fail = (t) => { console.log('\n  ✗ ' + t + '\n'); process.exit(1); };
   }
   console.log('  ✓ تم تسجيل الدخول');
 
-  step(2, 'تجهيز مخزن البيانات المشفّرة (KV)');
+  step(2, 'تجهيز مخزن البيانات المشفّرة (KV) وقاعدة تطبيق التواصل');
   const idFile = path.join(DIR, 'kv-id.txt');
   let kvId = fs.existsSync(idFile) ? fs.readFileSync(idFile, 'utf8').trim() : '';
   if (!/^[0-9a-f]{32}$/.test(kvId)) {
@@ -46,6 +46,21 @@ const fail = (t) => { console.log('\n  ✗ ' + t + '\n'); process.exit(1); };
     if (!kvId) { console.log(c.out); fail('تعذّر إنشاء مخزن KV.'); }
     fs.writeFileSync(idFile, kvId);
   }
+  // قاعدة بيانات تطبيق التواصل (D1) — 1.5.0
+  const d1File = path.join(DIR, 'd1-id.txt');
+  let d1Id = fs.existsSync(d1File) ? fs.readFileSync(d1File, 'utf8').trim() : '';
+  const UUID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/;
+  if (!UUID.test(d1Id)) {
+    d1Id = '';
+    const l = await run(['d1', 'list', '--json'], { capture: true, quiet: true, noInput: true });
+    try { const arr = JSON.parse(l.out.slice(l.out.indexOf('['), l.out.lastIndexOf(']') + 1)); d1Id = (arr.find((n) => n.name === 'madrasa_staff') || {}).uuid || ''; } catch { }
+    if (!d1Id) {
+      const c = await run(['d1', 'create', 'madrasa_staff'], { capture: true, quiet: true, noInput: true });
+      d1Id = ((c.out.match(/database_id"?\s*[:=]\s*"([0-9a-f-]{36})"/) || c.out.match(UUID) || [])[1]) || '';
+      if (!d1Id) { console.log(c.out); fail('تعذّر إنشاء قاعدة بيانات تطبيق التواصل (D1).'); }
+    }
+    fs.writeFileSync(d1File, d1Id);
+  }
   fs.writeFileSync(path.join(DIR, 'wrangler.toml'), `name = "madrasa-sync"
 main = "worker.js"
 compatibility_date = "2025-06-01"
@@ -54,6 +69,11 @@ workers_dev = true
 [[kv_namespaces]]
 binding = "DATA"
 id = "${kvId}"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "madrasa_staff"
+database_id = "${d1Id}"
 
 [vars]
 MAX_CHANNELS = "5"
@@ -76,7 +96,7 @@ crons = ["*/5 * * * *"]
   step(4, 'التحقق من الخادم وحفظ رابطه');
   let ok = false;
   for (let i = 0; i < 10 && !ok; i++) {
-    try { const r = await fetch(url + '/'); ok = r.ok && (await r.json()).app === 'madrasa-sync'; } catch { }
+    try { const r = await fetch(url + '/'); const j = await r.json(); ok = r.ok && j.app === 'madrasa-sync' && j.staff === true; } catch { }
     if (!ok) await new Promise((r) => setTimeout(r, 3000));
   }
   const cfgFile = path.join(ROOT, 'school.config.json');

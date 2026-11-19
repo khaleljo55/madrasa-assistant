@@ -101,6 +101,34 @@ export default {
       catch (e) { return json({ error: 'server', detail: String(e.message || e).slice(0, 200) }, 500); }
     }
     if (url.pathname === '/' || url.pathname === '/v1') return json({ ok: true, app: 'madrasa-sync', v: 3, push: true, staff: !!env.DB });
+    // ───── حساب المدرسة (1.8.0): الدخول من أي جهاز ببريد وكلمة مرور ─────
+    // يُحفظ هنا مفتاح المزامنة مشفّراً بكلمة المرور (تشفيره وفكّه في الجهاز فقط)، مع تجزئة «مُحقِّق» مشتق منها.
+    // الخادم لا يرى كلمة المرور ولا المفتاح؛ ويقفل الحساب مؤقتاً بعد 10 محاولات خاطئة.
+    const ac = url.pathname.match(/^\/acct\/([0-9a-f]{32})(\/login)?$/);
+    if (ac) {
+      const key = 'ac:' + ac[1], rec = await env.DATA.get(key, { type: 'json' });
+      if (req.method === 'GET' && !ac[2]) return json({ exists: !!rec });
+      let b = {}; try { b = await req.json(); } catch { return json({ error: 'bad_json' }, 400); }
+      if (!/^[A-Za-z0-9_-]{43}$/.test(b.v || '')) return json({ error: 'bad_input' }, 400);
+      const vh = await sha256hex('acct:' + b.v);
+      if (ac[2] && req.method === 'POST') {
+        if (!rec) return json({ error: 'no_account' }, 404);
+        const lk = 'al:' + ac[1], fails = Number((await env.DATA.get(lk)) || 0);
+        if (fails >= 10) return json({ error: 'locked' }, 429);
+        if (!safeEq(rec.vh, vh)) { await env.DATA.put(lk, String(fails + 1), { expirationTtl: 900 }); return json({ error: 'wrong' }, 401); }
+        return json({ ok: true, blob: rec.blob });
+      }
+      if (!ac[2] && req.method === 'PUT') { // إنشاء الحساب أو تغيير كلمة المرور: لمن يملك قناة المزامنة فقط
+        if (!/^[0-9a-f]{32}$/.test(b.ch || '') || !/^[A-Za-z0-9_-]{43}$/.test(b.tok || '') || typeof b.blob !== 'string' || b.blob.length > 2000) return json({ error: 'bad_input' }, 400);
+        const reg = await env.DATA.get('ch:' + b.ch);
+        if (!reg || !safeEq(reg, await sha256hex('madrasa-sync:' + b.tok))) return json({ error: 'forbidden' }, 403);
+        if (rec && rec.ch !== b.ch) return json({ error: 'other_school' }, 409);
+        await env.DATA.put(key, JSON.stringify({ vh, blob: b.blob, ch: b.ch, at: Date.now() }));
+        await env.DATA.delete('al:' + ac[1]);
+        return json({ ok: true });
+      }
+      return json({ error: 'method' }, 405);
+    }
     if (url.pathname === '/push/key' && req.method === 'GET') return json({ key: (await vapid(env)).pub });
     const ib = url.pathname.match(/^\/push\/inbox\/([0-9a-f]{32})$/);
     if (ib && req.method === 'GET') { // رقم الجوال السري (128 بت) هو مفتاح صندوقه

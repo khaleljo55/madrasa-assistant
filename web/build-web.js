@@ -22,7 +22,11 @@ html = html.replace('width=device-width, initial-scale=1"', 'width=device-width,
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="المساعد الإداري">
 <meta name="robots" content="noindex, nofollow">`)
-  .replace('<script src="relay.js"></script>', '<script src="relay.js"></script>\n<script src="sw-reg.js"></script>');
+  .replace('<script src="relay.js"></script>', '<script src="relay-cfg.js"></script>\n<script src="relay.js"></script>\n<script src="sw-reg.js"></script>');
+// رابط خادم المزامنة للجوال (ليس سراً: هو في روابط التسجيل أصلاً) حتى يعمل «الدخول بحساب المدرسة» دون رمز
+let relayUrl = ''; try { relayUrl = JSON.parse(fs.readFileSync(path.join(ROOT, 'school.config.json'), 'utf8')).syncRelay || ''; } catch { }
+if (!/^https:\/\/[a-z0-9.-]+\.workers\.dev$/i.test(relayUrl)) relayUrl = '';
+fs.writeFileSync(path.join(OUT, 'relay-cfg.js'), `window.MADRASA_RELAY = ${JSON.stringify(relayUrl)};\n`);
 if (!html.includes('workers.dev') || !html.includes('manifest.webmanifest') || !html.includes('sw-reg.js')) throw new Error('تعذّر تعديل index.html');
 fs.writeFileSync(path.join(OUT, 'index.html'), html);
 

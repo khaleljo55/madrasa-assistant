@@ -501,19 +501,53 @@ async function checkUpdate(manual) {
     renderUpdBar(); if (ui.view === 'settings') render();
   } catch { if (manual) toast('تعذّر البحث عن تحديث', 'err'); }
 }
+// التحديث التلقائي الكامل (1.2.0): يُنزَّل في الخلفية فور نشره، ويُثبَّت بصمت عند إغلاق البرنامج،
+// أو بعد 20 دقيقة دون استخدام مع عدّ تنازلي يمكن تأجيله، ثم يُعاد فتح البرنامج تلقائياً.
+const autoInst = () => db?.settings.autoInstall !== false;
+UPD.lastInput = Date.now();
+['pointerdown', 'keydown', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { UPD.lastInput = Date.now(); }, { capture: true, passive: true }));
+async function updAutoDownload() {
+  const u = UPD.info; if (!u || !autoInst() || !N?.updateDownload || UPD.busy || UPD.ready === u.version) return;
+  UPD.busy = true; UPD.progress = 0; renderUpdBar();
+  const r = await N.updateDownload(u.url, u.version, u.size);
+  UPD.busy = false;
+  if (r?.ok) { UPD.ready = u.version; N.updateAuto?.(true); } else UPD.dlError = r?.error || '';
+  renderUpdBar();
+}
 function renderUpdBar() {
   let el = document.getElementById('updBar');
   if (!el) { el = document.createElement('div'); el.id = 'updBar'; document.getElementById('syncBar')?.before(el); }
   const u = UPD.info;
-  if (!u || UPD.dismissed) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span class="big">🎉</span><div><b>يتوفر إصدار جديد من البرنامج (${esc(u.version)})</b><div class="muted">${UPD.busy ? `جارٍ التنزيل… ${UPD.progress}%` : 'التحديث يحافظ على كل بياناتكِ'}</div></div><span class="spacer"></span>
-    ${UPD.busy ? `<div class="progress" style="width:160px"><div style="width:${UPD.progress}%"></div></div>` : '<button class="btn primary" data-act="updInstall">تحديث الآن</button><button class="btn ghost" data-act="updLater">لاحقاً</button>'}</div>`;
+  if (!u || (UPD.dismissed && !UPD.count)) { el.innerHTML = ''; return; }
+  const ready = UPD.ready === u.version;
+  if (UPD.count) { el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span class="big">🔄</span><div><b>سيُحدَّث البرنامج إلى ${esc(u.version)} خلال ${UPD.count} ثانية</b><div class="muted">تُحفظ بياناتكِ، ويُعاد فتح البرنامج تلقائياً بعد أقل من دقيقة.</div></div><span class="spacer"></span><button class="btn primary" data-act="updApply">التحديث الآن</button><button class="btn" data-act="updPostpone">تأجيل ساعة</button></div>`; return; }
+  el.innerHTML = `<div class="banner brand" style="margin:0 28px 10px;padding:10px 16px"><span class="big">${ready ? '✅' : '🎉'}</span><div><b>${ready ? `التحديث ${esc(u.version)} جاهز` : `يتوفر إصدار جديد من البرنامج (${esc(u.version)})`}</b><div class="muted">${UPD.busy ? `جارٍ التنزيل في الخلفية… ${UPD.progress}%` : ready ? 'يُثبَّت تلقائياً عند إغلاق البرنامج، أو الآن بضغطة. بياناتكِ محفوظة.' : 'التحديث يحافظ على كل بياناتكِ'}</div></div><span class="spacer"></span>
+    ${UPD.busy ? `<div class="progress" style="width:160px"><div style="width:${UPD.progress}%"></div></div>` : `<button class="btn primary" data-act="${ready ? 'updApply' : 'updInstall'}">${ready ? 'التحديث الآن' : 'تحديث الآن'}</button><button class="btn ghost" data-act="updLater">لاحقاً</button>`}</div>`;
 }
+function updCountdown() {
+  if (UPD.count) return;
+  UPD.count = 60; UPD.cdStart = Date.now(); renderUpdBar();
+  try { new Notification('المساعد الإداري', { body: `سيُحدَّث البرنامج إلى ${UPD.info.version} خلال دقيقة`, tag: 'upd' }); } catch { }
+  UPD.timer = setInterval(() => {
+    if (UPD.lastInput > UPD.cdStart + 800) { /* عادت المستخدمة للعمل: نؤجل */ clearInterval(UPD.timer); UPD.count = 0; UPD.snooze = Date.now() + 3600e3; renderUpdBar(); return; }
+    UPD.count--; renderUpdBar();
+    if (UPD.count <= 0) { clearInterval(UPD.timer); N.updateApply(); }
+  }, 1000);
+}
+// كل دقيقة: إن كان التحديث جاهزاً والبرنامج دون استخدام 20 دقيقة ولا توجد نافذة مفتوحة، نبدأ العدّ التنازلي
+setInterval(() => {
+  if (!UPD.ready || UPD.ready !== UPD.info?.version || !autoInst() || UPD.count || modalCtx) return;
+  if (Date.now() < (UPD.snooze || 0) || Date.now() - UPD.lastInput < 20 * 60000) return;
+  updCountdown();
+}, 60000);
 Object.assign(ACTIONS, {
   updCheck: () => checkUpdate(true),
   updLater: () => { UPD.dismissed = true; renderUpdBar(); },
+  updApply: async () => { clearInterval(UPD.timer); toast('جارٍ التحديث… سيُعاد فتح البرنامج تلقائياً', 'ok'); const r = await N.updateApply(); if (!r?.ok) toast('تعذّر التحديث: ' + (r?.error || ''), 'err'); },
+  updPostpone: () => { clearInterval(UPD.timer); UPD.count = 0; UPD.snooze = Date.now() + 3600e3; renderUpdBar(); toast('سيُعاد عرض التحديث بعد ساعة'); },
   updInstall: async () => {
     if (!UPD.info || UPD.busy) return;
+    if (N?.updateDownload) { const prev = db.settings.autoInstall; db.settings.autoInstall = true; await updAutoDownload(); db.settings.autoInstall = prev; if (UPD.ready === UPD.info.version) ACTIONS.updApply(); else toast('تعذّر تنزيل التحديث: ' + (UPD.dlError || ''), 'err'); return; }
     UPD.busy = true; UPD.progress = 0; renderUpdBar();
     const r = await N.updateInstall(UPD.info.url);
     if (!r?.ok) { UPD.busy = false; renderUpdBar(); toast('تعذّر تنزيل التحديث: ' + (r?.error || ''), 'err'); }
@@ -521,10 +555,12 @@ Object.assign(ACTIONS, {
   },
 });
 CHANGES.autoUpdate = (el) => { db.settings.autoUpdate = el.checked; commit(false); };
+CHANGES.autoInstall = (el) => { db.settings.autoInstall = el.checked; commit(false); N?.updateAuto?.(el.checked); if (el.checked) updAutoDownload(); };
 if (N?.onUpdateProgress) N.onUpdateProgress((p) => { UPD.progress = p; renderUpdBar(); });
-addHook('beforeStart', async () => { if (N?.appVersion) { try { UPD.version = await N.appVersion(); } catch { } } });
-setTimeout(() => { if (db?.settings.autoUpdate && N?.updateCheck) checkUpdate(false); }, 12000);
-setInterval(() => { if (db?.settings.autoUpdate && N?.updateCheck && !UPD.info) checkUpdate(false); }, 6 * 3600000);
+addHook('beforeStart', async () => { if (N?.appVersion) { try { UPD.version = await N.appVersion(); } catch { } } N?.updateAuto?.(autoInst()); });
+const updTick = async () => { if (!db?.settings.autoUpdate || !N?.updateCheck) return; await checkUpdate(false); updAutoDownload(); };
+setTimeout(updTick, 12000);
+setInterval(updTick, 3600000); // كل ساعة
 
 // ═════════════ بطاقات الإعدادات ═════════════
 addHook('settingsCards', () => {
@@ -538,8 +574,10 @@ addHook('settingsCards', () => {
     </div>
     <div class="card"><h3>⬆️ التحديثات</h3>
       <div class="muted">الإصدار الحالي: <b>${esc(UPD.version || '—')}</b>${UPD.info ? ` · <b style="color:var(--brand)">يتوفر ${esc(UPD.info.version)}</b>` : UPD.checked ? ' · أحدث إصدار ✓' : ''}</div>
-      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" ${db.settings.autoUpdate !== false ? 'checked' : ''} data-change="autoUpdate"> البحث عن التحديثات تلقائياً</label>
-      <div style="display:flex;gap:8px;margin-top:10px">${UPD.info ? '<button class="btn primary sm" data-act="updInstall">تحديث الآن</button>' : ''}<button class="btn sm" data-act="updCheck">البحث عن تحديث الآن</button></div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" ${db.settings.autoUpdate !== false ? 'checked' : ''} data-change="autoUpdate"> البحث عن التحديثات تلقائياً (كل ساعة)</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" ${db.settings.autoInstall !== false ? 'checked' : ''} data-change="autoInstall"> تنزيل التحديث وتثبيته تلقائياً دون سؤال</label>
+      ${UPD.ready ? `<div class="chip green" style="margin-top:8px">التحديث ${esc(UPD.ready)} جاهز ويُثبَّت عند الإغلاق</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:10px">${UPD.info ? `<button class="btn primary sm" data-act="${UPD.ready === UPD.info.version ? 'updApply' : 'updInstall'}">تحديث الآن</button>` : ''}<button class="btn sm" data-act="updCheck">البحث عن تحديث الآن</button></div>
     </div>
     <div class="card" style="grid-column:1/-1"><details class="adv" ${ui.balOpen ? 'open' : ''}><summary data-act="balToggle"><h3 style="display:inline-flex;margin:0">⚖️ أرصدة الإجازات</h3></summary>
       <div class="muted" style="margin:10px 0">حدّدي عدد الأيام المسموح بها في العام لكل نوع حسب الأنظمة المعمول بها لديكم، واتركي الخانة فارغة إذا لم يكن له حد. ينبّهكِ البرنامج عند اقتراب أي معلمة من رصيدها أو تجاوزه.</div>

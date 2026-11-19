@@ -19,7 +19,7 @@ const NEW_ITEMS = {
     { group: 'teachers', ic: '👩‍🏫', label: 'شؤون المعلمات', items: pick(['teachers', 'timetable', 'absence', 'subs', 'entries', 'duties']) },
     byId.students,
     { group: 'super', ic: '🎙️', label: 'الإشراف والأنشطة', items: pick(['assembly', 'break', 'occasions', 'visits', 'visitors']) },
-    { group: 'docs', ic: '📨', label: 'المراسلات والمستندات', items: pick(['comms', 'letters', 'mail', 'circulars', 'meetings', 'sms', 'present']) },
+    { group: 'docs', ic: '📨', label: 'المراسلات والمستندات', items: pick(['comms', 'surveys', 'letters', 'mail', 'circulars', 'meetings', 'sms', 'present']) },
     { group: 'know', ic: '📚', label: 'المعرفة والأدوات', items: pick(['library', 'quran', 'tools']) },
     custom,
     byId.settings,

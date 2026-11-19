@@ -43,6 +43,14 @@ async function api(path, opt = {}, auth = true) {
 }
 function toast(t, kind) { const el = document.createElement('div'); el.className = 'toast ' + (kind || ''); el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 3800); }
 const fmt = (ms) => { const d = new Date(ms), now = new Date(); const same = d.toDateString() === now.toDateString(); return same ? d.toLocaleTimeString('ar-SA-u-nu-latn', { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString('ar-SA-u-nu-latn', { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('ar-SA-u-nu-latn', { hour: 'numeric', minute: '2-digit' }); };
+function svField(f, v = '') {
+  const req = f.required ? ' required' : '', star = f.required ? ' <span class="err">*</span>' : '';
+  let c;
+  if (f.type === 'textarea') c = `<textarea name="${f.id}" rows="4" maxlength="2000"${req}>${esc(v)}</textarea>`;
+  else if (f.type === 'select') c = `<select name="${f.id}"${req}><option value="">اختاري…</option>${(f.options || []).map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  else c = `<input name="${f.id}" type="${f.type}" value="${esc(v)}" maxlength="300"${['email', 'tel', 'number'].includes(f.type) ? ' dir="ltr"' : ''}${req}>`;
+  return `<label>${esc(f.label)}${star}${c}</label>`;
+}
 const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
 
 // ───── الشاشات ─────
@@ -72,15 +80,19 @@ function render() {
       </form></div>`;
     return;
   }
-  const notes = S.inbox.filter((m) => m.kind !== 'req'), reqs = S.inbox.filter((m) => m.kind === 'req');
+  const notes = S.inbox.filter((m) => m.kind !== 'req' && m.kind !== 'survey'), reqs = S.inbox.filter((m) => m.kind === 'req' || m.kind === 'survey');
   const unread = notes.filter((m) => !m.read_at).length, todo = reqs.filter((m) => !m.done_at && !m.ok_at).length;
   const tabs = isStu() ? [['reqs', '📋', 'المطلوب', todo], ['inbox', '🔔', 'التذكيرات', unread], ...(S.user?.chat ? [['chat', '💬', 'الإدارة', 0]] : []), ['me', '👤', 'حسابي', 0]]
     : [['inbox', '📬', 'الرسائل', unread], ...(reqs.length ? [['reqs', '📋', 'المطلوب', todo]] : []), ...(S.user?.chat ? [['chat', '💬', 'المحادثة', 0]] : []), ['me', '👤', 'حسابي', 0]];
   if (S.tab === 'inbox' && isStu() && !S.tabSet) { S.tab = 'reqs'; S.tabSet = true; }
+  if (S.tab === 'survey' && S.sv) tabs.push(['survey', '📝', 'الاستبيان', 0]);
   if (!tabs.some((t) => t[0] === S.tab)) S.tab = 'inbox';
   let body = '';
   const t0 = todayStr();
-  if (S.tab === 'reqs') body = reqs.length ? `<div class="list">${reqs.map((m) => { const late = m.due && m.due < t0 && !m.done_at && !m.ok_at, st = m.ok_at ? '<span class="st ok">✅ استلمتها الإدارة</span>' : m.done_at ? '<span class="st wait">⏳ أبلغتِ أنكِ أنجزتِه</span>' : late ? '<span class="st late">⚠️ تأخر الموعد</span>' : '<span class="st todo">مطلوب</span>';
+  if (S.tab === 'survey' && S.sv) { const Q = S.sv.survey, A = S.sv.answer || {}, pre = { name: S.user?.name, phone: S.user?.phone, guardianPhone: S.user?.phone, cls: S.user?.cls };
+    body = `<div class="card"><h3>📝 ${esc(Q.title)}</h3>${Q.intro ? `<div class="muted">${esc(Q.intro).replace(/\n/g, '<br>')}</div>` : ''}</div>
+      ${Q.open ? `<form id="svForm" class="card">${Q.fields.map((f) => svField(f, A[f.id] ?? (S.sv.answer ? '' : pre[f.map] || ''))).join('')}<button class="btn primary" type="submit">${S.sv.answer ? 'حفظ التعديل' : 'إرسال'}</button><button class="btn link" type="button" data-act="tab" data-id="reqs">رجوع</button></form>` : '<div class="card err">انتهى استقبال الإجابات لهذا الاستبيان.</div>'}`; }
+  if (S.tab === 'reqs') body = reqs.length ? `<div class="list">${reqs.map((m) => { if (m.kind === 'survey') return `<div class="msg req"><div class="mh"><b>📝 ${esc(m.title || 'استبيان')}</b>${m.done_at ? '<span class="st ok">✅ أرسلتِ إجابتكِ</span>' : '<span class="st todo">استبيان</span>'}</div>${m.body && m.body !== m.title ? `<div class="mb" style="display:block">${linkify(m.body)}</div>` : ''}<button class="btn ${m.done_at ? '' : 'primary'} sm" data-act="svOpen" data-id="${esc(m.thread || '')}" data-m="${m.id}">${m.done_at ? '✏️ تعديل إجابتي' : '📝 تعبئة الاستبيان'}</button></div>`; const late = m.due && m.due < t0 && !m.done_at && !m.ok_at, st = m.ok_at ? '<span class="st ok">✅ استلمتها الإدارة</span>' : m.done_at ? '<span class="st wait">⏳ أبلغتِ أنكِ أنجزتِه</span>' : late ? '<span class="st late">⚠️ تأخر الموعد</span>' : '<span class="st todo">مطلوب</span>';
       return `<div class="msg req ${m.ok_at ? 'okd' : ''}"><div class="mh"><b>${esc(m.title || 'طلب')}</b>${st}</div>${m.body && m.body !== m.title ? `<div class="mb" style="display:block">${linkify(m.body)}</div>` : ''}${m.due ? `<div class="due ${late ? 'late' : ''}">📅 آخر موعد: ${dayFmt(m.due)}</div>` : ''}
         ${m.ok_at ? '' : `<button class="btn ${m.done_at ? '' : 'primary'} sm" data-act="done" data-id="${m.id}">${m.done_at ? '↩ لم أنجزه بعد' : '✓ أنجزته / أحضرته'}</button>`}</div>`; }).join('')}</div>` : '<div class="empty">🎉<p>لا يوجد شيء مطلوب منكِ الآن</p></div>';
   if (S.tab === 'inbox') body = notes.length ? `<div class="list">${notes.map((m) => `<div class="msg ${m.read_at ? '' : 'new'} ${S.open === m.id ? 'open' : ''}" data-act="openMsg" data-id="${m.id}"><div class="mh"><b>${esc(m.title || 'رسالة')}</b><span class="t">${fmt(m.created)}</span></div><div class="from">${esc(m.sender_name)}${m.remind_at ? ` · 🔔 ${m.remind_at > Date.now() ? 'تذكير ' : ''}${fmt(m.remind_at)}` : ''}</div><div class="mb">${S.open === m.id ? linkify(m.body) : esc(String(m.body).slice(0, 120))}</div></div>`).join('')}</div>` : `<div class="empty">📭<p>${isStu() ? 'لا تذكيرات بعد' : 'لا رسائل بعد'}</p></div>`;
@@ -160,6 +172,7 @@ document.addEventListener('click', async (e) => {
   }
   if (a === 'logout') { if (confirm('تسجيل الخروج من هذا الجوال؟')) logout(); }
   if (a === 'pushOn') pushOn();
+  if (a === 'svOpen') { try { S.sv = await api('/st/survey/' + id); S.svMsg = Number(el.dataset.m); S.tab = 'survey'; render(); window.scrollTo(0, 0); } catch (err) { toast(err.message, 'err'); } }
   if (a === 'done') { const m = S.inbox.find((x) => String(x.id) === id); if (!m) return; const d = !m.done_at; m.done_at = d ? Date.now() : null; render(); api('/st/done', { method: 'POST', body: JSON.stringify({ id: m.id, done: d }) }).then(() => d && toast('✓ أُبلغت الإدارة', 'ok')).catch((err) => { toast(err.message, 'err'); m.done_at = d ? null : Date.now(); render(); }); }
   if (a === 'checkPend') { S.err = ''; try { const r = await doLogin(S.pend.username, S.pend.pass); if (r === 'pending') { S.err = 'ما زال الطلب قيد المراجعة'; render(); } } catch (err) { S.err = err.message; render(); } }
   if (a === 'cancelPend') { S.pend = null; LS.set('pend', null); S.authTab = 'login'; render(); }
@@ -185,6 +198,11 @@ document.addEventListener('submit', async (e) => {
     const t = String(d.body || '').trim(); if (!t) return;
     f.querySelector('button').disabled = true;
     try { await api('/st/chat', { method: 'POST', body: JSON.stringify({ body: t }) }); await loadChat(); render(); } catch (err) { toast(err.message, 'err'); f.querySelector('button').disabled = false; }
+  }
+  if (f.id === 'svForm') {
+    const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+    try { await api('/st/survey/' + S.sv.survey.id, { method: 'POST', body: JSON.stringify({ data: d }) }); const m = S.inbox.find((x) => x.id === S.svMsg); if (m) m.done_at = Date.now(); S.sv = null; S.tab = 'reqs'; toast('✓ أُرسلت إجابتكِ، شكراً لكِ', 'ok'); render(); }
+    catch (err) { toast({ required: 'أكملي الإجابات الإلزامية', bad_email: 'البريد غير صحيح', closed: 'انتهى استقبال الإجابات' }[err.code] || err.message, 'err'); btn.disabled = false; }
   }
   if (f.id === 'passForm') {
     try { await api('/st/pass', { method: 'POST', body: JSON.stringify({ pass: await passHash(S.user.username, String(d.pass)) }) }); toast('✓ تغيّرت كلمة المرور', 'ok'); f.reset(); } catch (err) { toast(err.message, 'err'); }

@@ -1,5 +1,5 @@
-// تواصل الطالبات 1.8.0-mwnkmuhk
-const P = 'student', CACHE = P + '-1.8.0-mwnkmuhk';
+// تواصل الطالبات 1.9.0-mwnl4esf
+const P = 'student', CACHE = P + '-1.9.0-mwnl4esf';
 const SHELL = ['./', 'index.html', 'mode.js', 'staff.js', 'staff.css', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith(P + '-') && k !== CACHE && k !== P + '-push').map((k) => caches.delete(k)))).then(() => self.clients.claim())));

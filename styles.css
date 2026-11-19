@@ -633,9 +633,7 @@ tr.sub-open td { background: #fffaf0; }
 .hud-body { position: relative; height: 100%; animation: hudBob 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
 .hud-body img { height: 100%; width: auto; display: block; filter: drop-shadow(0 4px 6px rgba(20,40,35,.22)); user-select: none; -webkit-user-drag: none; }
 .hud-gl { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.hud.talk .hud-body { animation: hudTalk .32s ease-in-out infinite alternate; }
 @keyframes hudBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
-@keyframes hudTalk { from { transform: rotate(-1.6deg) scale(1) } to { transform: rotate(1.6deg) scale(1.015) } }
 .hud-fig.pop .hud-body { animation: hudPop .8s cubic-bezier(.34,1.56,.64,1); }
 .hud-fig.hop .hud-body { animation: hudHop .85s ease-out; }
 .hud-fig.knock .hud-body { animation: hudKnock .21s ease-in-out 3; transform-origin: 50% 90%; }

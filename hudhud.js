@@ -28,7 +28,7 @@ const HUD_SIZES = { s: 130, m: 170, l: 215 };
 const hudCfg = () => {
   const c = db.settings.hudhud || {};
   return {
-    on: true, mode: 'peek', size: 'm', freq: 25, voice: true, pitch: 1.7, knock: true,
+    on: true, mode: 'peek', size: 'm', freq: 25, knock: true,
     hair: 'orig', hairCustom: '#c98b4a', outfit: 'purple', customDress: '#7b3fb5', customShirt: '#efe3fb', glasses: 'none', glassesColor: '#c0392b',
     weekOn: true, ...c,
     week: { 0: 'purple', 1: 'sky', 2: 'mint', 3: 'pink', 4: 'yellow', ...(c.week || {}) },
@@ -126,24 +126,7 @@ function hudGlassesSvg(n, look) {
 // شكل كامل (صورة + نظارة) لاستخدامه في المعاينة
 async function hudFigure(n, look) { const urls = await hudUrls(look); return `<img src="${urls[n]}" alt="">${hudGlassesSvg(n, look)}`; }
 
-// ───── الصوت ─────
-const hudPlain = (t) => String(t).replace(/<[^>]+>/g, ' ').replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/Ctrl ?\+ ?K/gi, 'كنترول كاف').replace(/\s+/g, ' ').trim();
-function hudVoice() {
-  if (!('speechSynthesis' in window)) return null;
-  const vs = speechSynthesis.getVoices();
-  return vs.find((v) => /^ar[-_]SA/i.test(v.lang)) || vs.find((v) => /^ar/i.test(v.lang)) || null;
-}
-if ('speechSynthesis' in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { if (ui.view === 'settings') { const n = $('#hudVoiceNote'); if (n) n.innerHTML = hudVoiceNote(); } }; }
-function hudSpeak(t, force) {
-  const c = hudCfg(); if ((!c.voice && !force) || !('speechSynthesis' in window)) return false;
-  const v = hudVoice(); if (!v) return false;
-  try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(hudPlain(t)); u.voice = v; u.lang = v.lang; u.pitch = Number(c.pitch) || 1.7; u.rate = 1.03;
-    u.onstart = () => HUD.el?.classList.add('talk'); u.onend = u.onerror = () => HUD.el?.classList.remove('talk');
-    speechSynthesis.speak(u); return true;
-  } catch { return false; }
-}
+// ───── صوت الطرق ─────
 // صوت الطرق «طق طق طق» يُولَّد داخل البرنامج دون ملفات صوتية
 function hudKnockSound() {
   try {
@@ -249,7 +232,7 @@ function hudDown() { if (!HUD.el) return; HUD.el.classList.remove('up'); HUD.el.
 const hudCanShow = () => db && hudCfg().on && HUD.el && !document.hidden && !modalCtx && !document.querySelector('.lock-screen') && !document.getElementById('restOverlay');
 
 // قول عبارة مع وضعية وأزرار
-function hudSay(text, { pose = 1, acts = '', speak = true, ms, anim = 'pop', info = '' } = {}) {
+function hudSay(text, { pose = 1, acts = '', ms, anim = 'pop', info = '' } = {}) {
   if (!HUD.el || !hudCfg().on) return;
   const t = hudFill(text);
   const b = HUD.el.querySelector('.hud-bubble');
@@ -258,7 +241,6 @@ function hudSay(text, { pose = 1, acts = '', speak = true, ms, anim = 'pop', inf
   b.hidden = false; b.classList.remove('in'); void b.offsetWidth; b.classList.add('in');
   HUD.el.querySelector('.hud-panel').hidden = true;
   hudUp(); hudPose(pose); if (anim) hudAnim(anim, 900);
-  if (speak) hudSpeak(t);
   clearTimeout(HUD.hideT); HUD.hideT = setTimeout(hudHideBubble, ms || Math.max(9000, 6000 + t.length * 90 + (info ? 6000 : 0) + (acts ? 8000 : 0)));
   HUD.lastPop = Date.now();
 }
@@ -348,7 +330,7 @@ function hudTogglePanel(force) {
     <div class="hud-moods"><span class="muted">مزاجي اليوم:</span>${HUD_MOODS.map((x) => `<button class="hud-chip ${m?.id === x.id ? 'on' : ''}" data-act="hudMood" data-id="${x.id}">${x.ic} ${x.name}</button>`).join('')}</div>
     <input class="input" id="hudQ" placeholder="كيف أ… (اكتبي سؤالك)" autocomplete="off">
     <div class="hud-faq">${HUD_FAQ.map(([q, a, v], i) => `<details data-i="${i}"><summary>${esc(q)}</summary><div>${esc(a)}</div>${v ? `<button class="btn sm" data-act="hudGo" data-id="${v}">خذيني هناك ←</button>` : ''}</details>`).join('')}<div class="hud-none muted" hidden>ما لقيت سؤالك 🙈 جرّبي كلمة ثانية، أو ابحثي في البرنامج كله بـ Ctrl + K</div></div>
-    <div class="hud-pf"><button class="btn sm" data-act="hudGo" data-id="hudset">👗 إعدادات هدهد</button><button class="btn sm" data-act="hudVoiceToggle">${c.voice ? '🔊 صوتها شغّال' : '🔇 صوتها مقفل'}</button><button class="btn sm" data-act="hudSleep">😴 نامي ساعة</button></div>`;
+    <div class="hud-pf"><button class="btn sm" data-act="hudGo" data-id="hudset">👗 إعدادات هدهد</button><button class="btn sm" data-act="hudSleep">😴 نامي ساعة</button></div>`;
   p.hidden = false; hudUp(); hudPose(2); hudAnim('pop', 700);
   setTimeout(() => p.querySelector('#hudQ')?.focus(), 50);
 }
@@ -366,11 +348,6 @@ function hudFilterFaq(q) {
 }
 
 // ───── الإعدادات ─────
-function hudVoiceNote() {
-  if (!('speechSynthesis' in window)) return '⚠️ النطق غير مدعوم هنا.';
-  const v = hudVoice();
-  return v ? `✓ الصوت المستخدم: <span dir="ltr">${esc(v.name)}</span>` : '⚠️ لا يوجد صوت عربي مثبّت في هذا الجهاز، فستظهر العبارات مكتوبة فقط. لإضافته في ويندوز: الإعدادات ← الوقت واللغة ← الكلام ← إضافة أصوات ← العربية، ثم أعيدي فتح البرنامج.';
-}
 const hudSw = (act, id, on, style, title) => `<button class="hud-sw ${on ? 'on' : ''}" data-act="${act}" data-id="${id}" title="${esc(title)}" style="${style}"></button>`;
 const hudOutSel = (change, val, id = '') => `<select class="input" data-change="${change}" data-id="${id}">${HUD_OUTFITS.map((o) => `<option value="${o.id}" ${o.id === val ? 'selected' : ''}>${o.name}</option>`).join('')}</select>`;
 function hudSettingsCard() {
@@ -380,17 +357,14 @@ function hudSettingsCard() {
   return `<div class="card" id="hudCard" style="grid-column:1/-1"><h3>👧 إعدادات هدهد</h3>
     <div class="hud-set">
       <div class="hud-prev"><div class="hud-prev-fig" id="hudPrev"></div><div class="muted" style="font-size:12px;text-align:center">لبس اليوم: <b>${esc(HUD_OUTFITS.find((o) => o.id === hudOutfitId(c))?.name || '')}</b>${hudMood() ? ` · مزاج ${hudMood().ic}` : ''}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px"><button class="btn sm" data-act="hudTest" data-id="greet">👋 التحية</button><button class="btn sm" data-act="hudTest" data-id="knock">✊ طق طق</button><button class="btn sm" data-act="hudTest" data-id="done">👏 احتفال</button><button class="btn sm" data-act="hudTest" data-id="voice">🔊 صوتها</button></div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px"><button class="btn sm" data-act="hudTest" data-id="greet">👋 التحية</button><button class="btn sm" data-act="hudTest" data-id="knock">✊ طق طق</button><button class="btn sm" data-act="hudTest" data-id="done">👏 احتفال</button></div></div>
       <div class="hud-opts">
         <label class="hud-row"><input type="checkbox" ${c.on ? 'checked' : ''} data-change="hudBool" data-id="on"> إظهار هدهد في الشاشة</label>
         <div class="form">
           <div class="field"><label>طريقة الظهور</label><select class="input" data-change="hudVal" data-id="mode"><option value="peek" ${c.mode === 'peek' ? 'selected' : ''}>تختبئ في الزاوية وتطلّ فجأة</option><option value="stay" ${c.mode === 'stay' ? 'selected' : ''}>ظاهرة دائماً في الزاوية</option></select></div>
           <div class="field"><label>الحجم</label><select class="input" data-change="hudVal" data-id="size"><option value="s" ${c.size === 's' ? 'selected' : ''}>صغيرة</option><option value="m" ${c.size === 'm' ? 'selected' : ''}>متوسطة</option><option value="l" ${c.size === 'l' ? 'selected' : ''}>كبيرة</option></select></div>
           <div class="field"><label>تطلّ بعبارة لطيفة</label><select class="input" data-change="hudVal" data-id="freq">${[[10, 'كل ١٠ دقائق'], [25, 'كل ٢٥ دقيقة'], [45, 'كل ٤٥ دقيقة'], [90, 'كل ساعة ونصف'], [0, 'فقط للتحية والتنبيهات']].map(([v, l]) => `<option value="${v}" ${Number(c.freq) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-          <div class="field"><label>طفولية الصوت</label><input type="range" min="1.2" max="2" step="0.1" value="${c.pitch}" data-change="hudVal" data-id="pitch"></div>
         </div>
-        <label class="hud-row"><input type="checkbox" ${c.voice ? 'checked' : ''} data-change="hudBool" data-id="voice"> تنطق العبارات بصوت طفولي</label>
-        <div class="muted" id="hudVoiceNote" style="font-size:12.5px;margin:-2px 0 6px">${hudVoiceNote()}</div>
         <label class="hud-row"><input type="checkbox" ${c.knock ? 'checked' : ''} data-change="hudBool" data-id="knock"> تطرق الشاشة «طق طق» للتنبيهات المهمة (مهام متأخرة، رسائل مناسبات)</label>
 
         <h4>💇‍♀️ لون الشعر</h4>
@@ -442,7 +416,6 @@ Object.assign(ACTIONS, {
     db.settings.hudhud = { ...(db.settings.hudhud || {}), mood: { day: todayISO(), id: m.id } }; commit(ui.view === 'settings');
     HUD.key = ''; hudTogglePanel(false); hudRefresh().then(() => hudSay(m.say, { pose: m.id === 'tired' ? 6 : 4, anim: 'hop' }));
   },
-  hudVoiceToggle: () => { const v = !hudCfg().voice; hudSet({ voice: v }, ui.view === 'settings'); if (v) hudSpeak('صوتي رجع! 😄'); else speechSynthesis?.cancel(); hudTogglePanel(true); },
   hudSleep: () => { hudTogglePanel(false); HUD.lastPop = Date.now() + 60 * 60000; HUD.el.classList.add('sleep'); setTimeout(() => HUD.el?.classList.remove('sleep'), 60 * 60000); toast('هدهد نايمة ساعة 😴 اضغطي عليها لتصحو'); },
   hudHair: (el) => hudSet({ hair: el.dataset.id }, true),
   hudOutfit: (el) => hudSet({ outfit: el.dataset.id }, true),
@@ -452,13 +425,12 @@ Object.assign(ACTIONS, {
     if (k === 'greet') { HUD.greeted = false; hudGreet(); }
     else if (k === 'knock') hudKnock('هذا مثال لتنبيه مهم 👀');
     else if (k === 'done') hudCelebrate(false);
-    else if (k === 'voice') { if (!hudSpeak(`مرحباً ${hudName()}! أنا هدهد، مساعدتك الصغيرة`, true)) toast('لا يوجد صوت عربي في هذا الجهاز', 'err'); else hudSay('مرحباً {n}! أنا هدهد، مساعدتك الصغيرة 💜', { pose: 1, speak: false }); }
     HUD.greeted = true;
   },
 });
 Object.assign(CHANGES, {
   hudBool: (el) => hudSet({ [el.dataset.id]: el.checked }, el.dataset.id === 'weekOn'),
-  hudVal: (el) => { const k = el.dataset.id; let v = el.value; if (k === 'freq') v = Number(v); if (k === 'pitch') v = Number(v); hudSet({ [k]: v }, /^(custom|glassesColor)/.test(k)); if (k === 'pitch') hudSpeak('هذا صوتي الآن', true); if (k === 'freq') HUD.lastPop = Date.now(); },
+  hudVal: (el) => { const k = el.dataset.id; let v = el.value; if (k === 'freq') v = Number(v); hudSet({ [k]: v }, /^(custom|glassesColor)/.test(k)); if (k === 'freq') HUD.lastPop = Date.now(); },
   hudHairCustom: (el) => hudSet({ hair: 'custom', hairCustom: el.value }, true),
   hudWeek: (el) => hudSet({ week: { ...hudCfg().week, [el.dataset.id]: el.value } }, true),
   hudMoodOutfit: (el) => hudSet({ moodOutfit: { ...hudCfg().moodOutfit, [el.dataset.id]: el.value } }, true),

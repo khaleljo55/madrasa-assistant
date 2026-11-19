@@ -7,6 +7,7 @@
 // ملاحظة: سجلّ حُذف في جهاز وبقي في الآخر يعود بعد الدمج (الأسلم من ضياع بيانات).
 
 const MG_SKIP = new Set(['meta', 'version', '_backup']);
+const MG = { quiet: false, busy: false };
 const mgIsObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 const mgEmpty = (v) => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) || (mgIsObj(v) && !Object.keys(v).length);
 const mgSig = (o) => { try { const { id, ...r } = o; return JSON.stringify(r, Object.keys(r).sort()); } catch { return Math.random() + ''; } };
@@ -68,6 +69,53 @@ function mergeDb(local, remote) {
   out.meta = { ...(localNewer ? local.meta : remote.meta), updatedAt: Date.now(), device: deviceId(), merged: true };
   return out;
 }
+// ───── الدمج الثلاثي (1.10.0): بمقارنة الجهازين بآخر نسخة اتفقا عليها (الأساس) ─────
+// فيُعرف ما أُضيف وما عُدّل وما حُذف في كل جهاز، فلا يعود المحذوف ولا يضيع المضاف، ودون أي سؤال.
+const mgEq = (a, b) => { try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; } };
+function mg3(l, r, b, lNewer, key) {
+  if (mgEq(l, r)) return l;
+  if (b !== undefined) { if (mgEq(l, b)) return r; if (mgEq(r, b)) return l; }
+  if (Array.isArray(l) && Array.isArray(r)) return mg3Arr(l, r, Array.isArray(b) ? b : undefined, lNewer, key);
+  if (mgIsObj(l) && mgIsObj(r)) {
+    const out = {}, B = mgIsObj(b) ? b : undefined;
+    for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
+      const inL = k in l, inR = k in r, inB = B && k in B;
+      if (inL && inR) out[k] = mg3(l[k], r[k], B ? B[k] : undefined, lNewer, key + '.' + k);
+      else if (inL) { if (!(inB && mgEq(l[k], B[k]))) out[k] = l[k]; } // حُذف في الآخر ولم يُعدَّل هنا ← يُحذف
+      else if (!(inB && mgEq(r[k], B[k]))) out[k] = r[k];
+    }
+    return out;
+  }
+  if (b === undefined) return mgObj(l, r, lNewer, key); // لا أساس: الدمج العادي
+  return lNewer ? l : r;
+}
+function mg3Arr(L, R, B, lNewer, key) {
+  const withId = (a) => a.every((x) => mgIsObj(x) && x.id != null);
+  if (!B || !withId(L) || !withId(R) || !withId(B)) return B ? (lNewer ? L : R) : mgArray(L, R, lNewer, key);
+  const mL = new Map(L.map((x) => [String(x.id), x])), mR = new Map(R.map((x) => [String(x.id), x])), mB = new Map(B.map((x) => [String(x.id), x]));
+  const out = [];
+  for (const x of L) {
+    const id = String(x.id);
+    if (mR.has(id)) out.push(mg3(x, mR.get(id), mB.get(id), lNewer, key + '[]'));
+    else if (!(mB.has(id) && mgEq(x, mB.get(id)))) out.push(x); // أُضيف هنا، أو عُدّل هنا بعد حذفه هناك ← يبقى
+  }
+  for (const y of R) { const id = String(y.id); if (!mL.has(id) && !(mB.has(id) && mgEq(y, mB.get(id)))) out.push(y); }
+  return out;
+}
+function mergeDb3(local, remote, base) {
+  const lt = local.meta?.updatedAt || 0, rt = remote.meta?.updatedAt || 0, ln = lt >= rt, out = {};
+  for (const k of new Set([...Object.keys(local), ...Object.keys(remote)])) {
+    if (MG_SKIP.has(k)) continue;
+    const inL = k in local, inR = k in remote;
+    out[k] = inL && inR ? mg3(local[k], remote[k], base ? base[k] : undefined, ln, k) : inL ? local[k] : remote[k];
+  }
+  out.version = Math.max(local.version || 1, remote.version || 1);
+  out.meta = { ...(ln ? local.meta : remote.meta), updatedAt: Date.now(), device: deviceId(), merged: true };
+  return out;
+}
+// «الأساس»: آخر نسخة متفق عليها مع الخادم لهذه القناة (يُحفظ بعد كل رفع أو تحميل ناجح)
+async function mgSaveBase() { try { if (typeof RELAY !== 'undefined' && RELAY.id) await IDB.put('kv', 'syncBaseData', { ch: RELAY.id, at: db.meta?.updatedAt || 0, json: JSON.stringify(db) }); } catch { } }
+async function mgGetBase() { try { const b = await IDB.get('kv', 'syncBaseData'); return b && b.ch === RELAY.id ? JSON.parse(b.json) : null; } catch { return null; } }
 const mgCount = (d) => Object.entries(d || {}).filter(([k, v]) => Array.isArray(v) && k !== 'occasions').reduce((a, [, v]) => a + v.length, 0);
 
 // ───── نسخ ما قبل المزامنة ─────
@@ -85,9 +133,10 @@ Object.assign(ACTIONS, {
   syncMerge: async () => {
     const remote = Sync.conflict; if (!remote) return;
     const full = remote._stub && typeof Sync.readRemote === 'function' ? await Sync.readRemote(true) : remote;
-    await mgSnapshot('قبل الدمج');
+    const base = await mgGetBase();
+    if (!base) await mgSnapshot('قبل الدمج');
     const before = { l: mgCount(db), r: mgCount(full) };
-    const merged = mergeDb(db, full);
+    const merged = base ? mergeDb3(db, full, base) : mergeDb(db, full);
     db = migrate(merged);
     for (const f of HOOKS.beforeStart || []) { try { await f(); } catch { } }
     await api.save(db);
@@ -95,7 +144,7 @@ Object.assign(ACTIONS, {
     Sync.conflict = null;
     await Sync.push(true);
     render(); renderSyncBar();
-    toast(`🔀 دُمجت البيانات: ${mgCount(db)} سجلاً (هذا الجهاز ${before.l} + الآخر ${before.r} دون تكرار)`, 'ok');
+    if (!MG.quiet) toast(base ? '🔀 دُمجت تعديلات الجهازين' : `🔀 دُمجت البيانات: ${mgCount(db)} سجلاً (هذا الجهاز ${before.l} + الآخر ${before.r} دون تكرار)`, 'ok');
   },
   mgDl: async (el) => {
     const list = (await IDB.get('kv', 'syncSnaps').catch(() => null)) || [], s = list[Number(el.dataset.id)];
@@ -116,3 +165,22 @@ addHook('settingsCards', () => {
   return `<div class="card"><h3>🛟 نسخ ما قبل المزامنة</h3><div class="muted" style="margin-bottom:8px">حفظها البرنامج تلقائياً قبل دمج البيانات أو استبدالها. نزّلي أيّها ثم استعيديها من «استعادة نسخة» عند الحاجة.</div>
     <div class="list">${MG_SNAPS.map((s, i) => `<div class="li"><div class="grow"><div class="t">${esc(s.reason)}</div><div class="s">${new Date(s.at).toLocaleString('ar-SA-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' })} · ${s.n} سجلاً</div></div><button class="btn sm" data-act="mgDl" data-id="${i}">⬇ تنزيل</button></div>`).join('')}</div></div>`;
 });
+
+// ───── الدمج التلقائي في المزامنة المشفّرة: لا أسئلة عند تعديل جهازين (1.10.0) ─────
+if (typeof rlPushNow === 'function') {
+  const _mgPush = rlPushNow;
+  rlPushNow = async function (...a) { await _mgPush.apply(this, a); if (rlOn() && Sync.status === 'on' && !Sync.conflict && Sync.base === (db.meta?.updatedAt || 0)) await mgSaveBase(); };
+}
+const _mgLoad = Sync.load;
+Sync.load = async function (...a) { const r = await _mgLoad.apply(this, a); if (rlOn()) await mgSaveBase(); return r; };
+const _mgSetConflict = Sync.setConflict;
+Sync.setConflict = function (remote) {
+  if (!rlOn() || !remote || MG.busy) return _mgSetConflict.call(this, remote);
+  this.conflict = remote;
+  MG.busy = true;
+  (async () => {
+    try { if (remote._stub) this.conflict = await this.readRemote(true); const hasBase = !!(await mgGetBase()); MG.quiet = hasBase; await ACTIONS.syncMerge(); }
+    catch (e) { console.warn('auto-merge failed', e); renderSyncBar(); }
+    finally { MG.quiet = false; MG.busy = false; }
+  })();
+};

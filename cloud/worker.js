@@ -110,7 +110,7 @@ export default {
     const ac = url.pathname.match(/^\/acct\/([0-9a-f]{32})(\/login)?$/);
     if (ac) {
       const key = 'ac:' + ac[1], rec = await env.DATA.get(key, { type: 'json' });
-      if (req.method === 'GET' && !ac[2]) return json({ exists: !!rec });
+      if (req.method === 'GET' && !ac[2]) return json({ exists: !!rec, ch: rec?.ch || '' }); // معرّف القناة (تجزئة) ليعرف الجهاز إن كان على حساب آخر
       let b = {}; try { b = await req.json(); } catch { return json({ error: 'bad_json' }, 400); }
       if (!/^[A-Za-z0-9_-]{43}$/.test(b.v || '')) return json({ error: 'bad_input' }, 400);
       const vh = await sha256hex('acct:' + b.v);

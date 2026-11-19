@@ -107,14 +107,30 @@ export default {
     // ───── حساب المدرسة (1.8.0): الدخول من أي جهاز ببريد وكلمة مرور ─────
     // يُحفظ هنا مفتاح المزامنة مشفّراً بكلمة المرور (تشفيره وفكّه في الجهاز فقط)، مع تجزئة «مُحقِّق» مشتق منها.
     // الخادم لا يرى كلمة المرور ولا المفتاح؛ ويقفل الحساب مؤقتاً بعد 10 محاولات خاطئة.
-    const ac = url.pathname.match(/^\/acct\/([0-9a-f]{32})(\/login)?$/);
+    const ac = url.pathname.match(/^\/acct\/([0-9a-f]{32})(\/login|\/recover|\/recovery)?$/);
     if (ac) {
       const key = 'ac:' + ac[1], rec = await env.DATA.get(key, { type: 'json' });
-      if (req.method === 'GET' && !ac[2]) return json({ exists: !!rec, ch: rec?.ch || '' }); // معرّف القناة (تجزئة) ليعرف الجهاز إن كان على حساب آخر
+      if (req.method === 'GET' && !ac[2]) return json({ exists: !!rec, ch: rec?.ch || '', recovery: !!rec?.rvh }); // معرّف القناة (تجزئة) ليعرف الجهاز إن كان على حساب آخر
       let b = {}; try { b = await req.json(); } catch { return json({ error: 'bad_json' }, 400); }
+      if (ac[2] === '/recovery' && req.method === 'PUT') { // رمز الاسترداد: يضعه جهاز يملك مفتاح المدرسة
+        if (!rec) return json({ error: 'no_account' }, 404);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(b.rv || '') || typeof b.rblob !== 'string' || b.rblob.length > 2000 || !/^[A-Za-z0-9_-]{43}$/.test(b.tok || '') || b.ch !== rec.ch) return json({ error: 'bad_input' }, 400);
+        const reg = await env.DATA.get('ch:' + rec.ch);
+        if (!reg || !safeEq(reg, await sha256hex('madrasa-sync:' + b.tok))) return json({ error: 'forbidden' }, 403);
+        await env.DATA.put(key, JSON.stringify({ ...rec, rvh: await sha256hex('recov:' + b.rv), rblob: b.rblob, rat: Date.now() }));
+        return json({ ok: true });
+      }
+      if (ac[2] === '/recover' && req.method === 'POST') { // نسيت كلمة المرور: الدخول برمز الاسترداد
+        if (!rec?.rvh) return json({ error: rec ? 'no_recovery' : 'no_account' }, 404);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(b.rv || '')) return json({ error: 'bad_input' }, 400);
+        const lk = 'al:' + ac[1], fails = Number((await env.DATA.get(lk)) || 0);
+        if (fails >= 10) return json({ error: 'locked' }, 429);
+        if (!safeEq(rec.rvh, await sha256hex('recov:' + b.rv))) { await env.DATA.put(lk, String(fails + 1), { expirationTtl: 900 }); return json({ error: 'wrong_code' }, 401); }
+        return json({ ok: true, blob: rec.rblob });
+      }
       if (!/^[A-Za-z0-9_-]{43}$/.test(b.v || '')) return json({ error: 'bad_input' }, 400);
       const vh = await sha256hex('acct:' + b.v);
-      if (ac[2] && req.method === 'POST') {
+      if (ac[2] === '/login' && req.method === 'POST') {
         if (!rec) return json({ error: 'no_account' }, 404);
         const lk = 'al:' + ac[1], fails = Number((await env.DATA.get(lk)) || 0);
         if (fails >= 10) return json({ error: 'locked' }, 429);
@@ -126,7 +142,7 @@ export default {
         const reg = await env.DATA.get('ch:' + b.ch);
         if (!reg || !safeEq(reg, await sha256hex('madrasa-sync:' + b.tok))) return json({ error: 'forbidden' }, 403);
         if (rec && rec.ch !== b.ch) return json({ error: 'other_school' }, 409);
-        await env.DATA.put(key, JSON.stringify({ vh, blob: b.blob, ch: b.ch, at: Date.now() }));
+        await env.DATA.put(key, JSON.stringify({ ...(rec || {}), vh, blob: b.blob, ch: b.ch, at: Date.now() })); // يبقى رمز الاسترداد كما هو
         await env.DATA.delete('al:' + ac[1]);
         return json({ ok: true });
       }

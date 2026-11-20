@@ -3,7 +3,7 @@
 // يُوزَّع برابط عام (لأي شخص معه الرابط) أو عبر تطبيقي التواصل، ثم تُضاف الإجابات بضغطة إلى «المعلمات» أو «الطالبات»
 // (تحديث الموجودة بالاسم أو البريد أو الجوال أو الهوية، وإضافة الجديدة). الإجابات في قاعدة الخادم (D1).
 const SV = { list: [], at: 0, loading: false, err: '', cur: null, resp: [], draft: null };
-const SURVEY_BASE = 'https://khaleljo55.github.io/madrasa-assistant/survey/';
+const SURVEY_BASE = BRAND.pages + 'survey/';
 const SV_TARGETS = {
   teacher: { label: '👩‍🏫 المعلمات', fields: [['name', 'اسم المعلمة'], ['subject', 'التخصص'], ['phone', 'الجوال'], ['email', 'البريد الإلكتروني']] },
   student: { label: '🎒 الطالبات', fields: STU_FIELDS.map(([k, l]) => [k, l]) },
@@ -20,8 +20,7 @@ const SV_TPL = {
   blank: { title: '', intro: '', target: '', fields: [{ label: '', type: 'text' }] },
 };
 const svLink = (s) => {
-  let base = SURVEY_BASE;
-  if (IS_WEBAPP && /^https?:/.test(location.protocol)) base = new URL('survey/', location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '')).href;
+  const base = brandLink('survey');
   return `${base}#s=${RELAY.id}&q=${s.id}&k=${s.pkey}&r=${encodeURIComponent(RELAY.cfg.url)}&n=${encodeURIComponent(db.settings.schoolName || '')}`;
 };
 async function svLoad(force) {

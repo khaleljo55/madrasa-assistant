@@ -25,6 +25,13 @@ const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + St
   }
 })();
 
+// العنوان القديم للخادم ← الجديد (يُجرَّب الجديد أولاً، والقديم ما دام الجديد لم يعمل بعد)
+async function bestRelay(u) {
+  let alt = ''; try { const x = new URL(u); if (/\.khaleljo55-519\.workers\.dev$/i.test(x.hostname)) { x.hostname = x.hostname.replace(/\.khaleljo55-519\.workers\.dev$/i, '.madrasa-assistant.workers.dev'); alt = x.origin; } } catch { }
+  if (!alt) return u;
+  try { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000); const r = await fetch(alt + '/', { cache: 'no-store', signal: ctl.signal }); clearTimeout(t); if (r.ok && (await r.json()).app === 'madrasa-sync') return alt; } catch { }
+  return u;
+}
 const b64u = (u8) => { let s = ''; u8.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 async function passHash(username, pass) {
@@ -222,6 +229,8 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.go) refresh(true).then(() => goHash(e.data.go)); });
 }
 render();
+(async () => { if (S.cfg?.r) { const b = await bestRelay(S.cfg.r); if (b !== S.cfg.r) { S.cfg = { ...S.cfg, r: b }; LS.set('cfg', S.cfg); if (S.tok) savePushCfg(); } } })().finally(() => {
 if (S.tok) refresh(false).then(() => goHash());
 else if (S.pend && S.cfg) doLogin(S.pend.username, S.pend.pass).catch(() => { }).finally(render);
+});
 setInterval(() => { if (document.visibilityState !== 'visible') return; if (S.tok) refresh(true); else if (S.pend && S.cfg) doLogin(S.pend.username, S.pend.pass).then(render).catch(() => { }); }, 20000);

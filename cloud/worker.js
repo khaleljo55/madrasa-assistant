@@ -25,7 +25,7 @@ const b64u = (u8) => { let s = ''; u8.forEach((b) => { s += String.fromCharCode(
 // الجهاز يرفع «خطة» إشعارات قصيرة بالأرقام فقط (مثل: عندك 3 مهام اليوم) دون أي تفاصيل،
 // والمؤقت (كل 5 دقائق) يرسل ما حان وقته إلى الجوالات المشتركة عبر Web Push (VAPID) دون محتوى،
 // ثم يجلب عامل الخدمة في الجوال نص الإشعار من صندوقه هنا (/push/inbox/<sid>) ويعرضه.
-const SUB_PUB = 'https://khaleljo55.github.io/madrasa-assistant/';
+const SUB_PUB = 'https://madrasa-assistant.github.io/app/';
 async function vapid(env) {
   let k = await env.DATA.get('vapid', { type: 'json' });
   if (!k) {

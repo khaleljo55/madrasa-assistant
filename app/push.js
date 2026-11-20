@@ -138,7 +138,11 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 (function hpStart() {
   if (!db || typeof RELAY === 'undefined') return setTimeout(hpStart, 500);
   hpGoHash();
-  hpState().then(() => { if (ui.view === 'settings') render(); });
+  hpState().then(async () => {
+    // عنوان الخادم قد يتغيّر (brand.js): يُحدَّث في ذاكرة عامل الخدمة حتى تبقى الإشعارات تعمل
+    try { if (HP.sid && HP.sub && hpReady()) { const c = await caches.open('hud-push'), r = await c.match('cfg'), o = r && await r.json(); if (!o || o.url !== RELAY.cfg.url) await c.put('cfg', new Response(JSON.stringify({ url: RELAY.cfg.url, sid: HP.sid }))); } } catch { }
+    if (ui.view === 'settings') render();
+  });
   setTimeout(() => hpSync(true), 20000);
   setInterval(() => hpSync(false), 60000);
 })();

@@ -7,7 +7,8 @@ const http = require('http');
 const { exec, execFileSync } = require('child_process');
 
 const APP_ID = 'sa.school.madrasa-assistant';
-const UPDATE_REPO = 'khaleljo55/madrasa-assistant'; // تُنشر ملفات التثبيت الجديدة في Releases بهذا المستودع
+// تُنشر ملفات التثبيت في Releases بالمستودع الجديد (منظمة باسم البرنامج)، والقديم احتياطاً قبل النقل (GitHub يحوّل منه بعد النقل)
+const UPDATE_REPOS = ['madrasa-assistant/app', 'khaleljo55/madrasa-assistant'];
 let win = null;
 
 // الفحص الآلي أثناء البناء يعمل بملف تعريف مؤقت منفصل، فلا يتعارض مع البرنامج المفتوح ولا يلمس بياناته
@@ -251,7 +252,8 @@ const verParts = (v) => String(v || '').replace(/^v/i, '').split('.').map((n) =>
 function isNewer(a, b) { const x = verParts(a), y = verParts(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
 ipcMain.handle('update:check', async () => {
   try {
-    const r = await net.fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: { 'User-Agent': 'MadrasaAssistant', Accept: 'application/vnd.github+json' } });
+    let r;
+    for (const repo of UPDATE_REPOS) { r = await net.fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { 'User-Agent': 'MadrasaAssistant', Accept: 'application/vnd.github+json' } }); if (r.status !== 404) break; }
     if (r.status === 404) return { available: false, current: app.getVersion(), none: true };
     if (!r.ok) return { available: false, error: 'HTTP ' + r.status };
     const j = await r.json();

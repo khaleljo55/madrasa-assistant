@@ -6,6 +6,13 @@ const H = new URLSearchParams(location.hash.replace(/^#/, ''));
 const C = { s: H.get('s') || '', q: H.get('q') || '', k: H.get('k') || '', r: (H.get('r') || '').replace(/\/+$/, ''), n: (H.get('n') || '').slice(0, 80) };
 const OK = /^[0-9a-f]{32}$/.test(C.s) && /^[0-9a-f]{16}$/.test(C.q) && /^[0-9a-f]{16}$/.test(C.k) && /^(https:\/\/[a-z0-9.-]+\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/i.test(C.r);
 const ERR = { required: 'أكملي الإجابات الإلزامية', bad_email: 'البريد الإلكتروني غير صحيح', closed: 'انتهى استقبال الإجابات لهذا الاستبيان', too_many: 'محاولات كثيرة من هذا الجهاز، حاولي لاحقاً', full: 'اكتمل عدد الإجابات', empty: 'لم تُكتب أي إجابة', not_found: 'الاستبيان غير موجود أو الرابط غير صحيح' };
+// العنوان القديم للخادم ← الجديد (يُجرَّب الجديد أولاً، والقديم ما دام الجديد لم يعمل بعد)
+async function bestRelay(u) {
+  let alt = ''; try { const x = new URL(u); if (/\.khaleljo55-519\.workers\.dev$/i.test(x.hostname)) { x.hostname = x.hostname.replace(/\.khaleljo55-519\.workers\.dev$/i, '.madrasa-assistant.workers.dev'); alt = x.origin; } } catch { }
+  if (!alt) return u;
+  try { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000); const r = await fetch(alt + '/', { cache: 'no-store', signal: ctl.signal }); clearTimeout(t); if (r.ok && (await r.json()).app === 'madrasa-sync') return alt; } catch { }
+  return u;
+}
 let S = null, state = 'load', err = '';
 function field(f, v = '') {
   const req = f.required ? ' required' : '', star = f.required ? ' <span class="err">*</span>' : '';
@@ -40,7 +47,7 @@ document.addEventListener('submit', async (e) => {
 });
 document.addEventListener('click', (e) => { if (e.target.closest('[data-act=again]')) { state = 'form'; render(); } });
 render();
-if (OK) fetch(`${C.r}/sv/${C.s}/${C.q}?k=${C.k}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ r, j }))).then(({ r, j }) => {
+if (OK) bestRelay(C.r).then((b) => { C.r = b; return fetch(`${C.r}/sv/${C.s}/${C.q}?k=${C.k}`, { cache: 'no-store' }).then((r) => r.json().then((j) => ({ r, j }))).then(({ r, j }) => {
   if (!r.ok) { state = 'error'; err = ERR[j.error] || 'تعذّر فتح الاستبيان'; } else { S = j.survey; state = 'form'; }
   render();
-}).catch(() => { state = 'error'; err = 'تعذّر الاتصال، تأكدي من الإنترنت'; render(); });
+}); }).catch(() => { state = 'error'; err = 'تعذّر الاتصال، تأكدي من الإنترنت'; render(); });

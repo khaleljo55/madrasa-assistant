@@ -21,6 +21,8 @@ function rlParse(code) {
   try { const o = JSON.parse(new TextDecoder().decode(rlUnb64u(m[1]))); const u = String(o.u).replace(/\/+$/, ''); return RL_URL.test(u) && rlUnb64u(o.k).length === 32 ? { url: u, k: o.k } : null; } catch { return null; }
 }
 async function rlActivate(cfg) {
+  // الانتقال إلى عنوان الخادم الجديد تلقائياً (brand.js)، مع حفظه حتى لا يُعاد الفحص في كل مرة
+  if (typeof rlBestUrl === 'function') { const best = await rlBestUrl(cfg.url); if (best && best !== cfg.url) { cfg = { ...cfg, url: best }; IDB.get('kv', 'relayCfg').then((c) => { if (c && c.k === cfg.k) IDB.put('kv', 'relayCfg', cfg); }).catch(() => { }); } }
   RELAY.cfg = cfg;
   RELAY.key = await crypto.subtle.importKey('raw', rlUnb64u(cfg.k), 'AES-GCM', false, ['encrypt', 'decrypt']);
   RELAY.id = rlHex(await rlSha('madrasa-id:' + cfg.k)).slice(0, 32);

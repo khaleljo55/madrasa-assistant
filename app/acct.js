@@ -16,7 +16,7 @@ async function acDerive(email, pass) {
   return { aid, key, v: rlB64u(bits.slice(32)) };
 }
 async function acFetch(path, opt = {}) {
-  const u = acUrl(); if (!RL_URL.test(u)) throw new Error('رابط خادم المزامنة غير معروف في هذا الجهاز');
+  const u = await rlBestUrl(acUrl()); if (!RL_URL.test(u)) throw new Error('رابط خادم المزامنة غير معروف في هذا الجهاز');
   let r; try { r = await fetch(u + path, { ...opt, cache: 'no-store', headers: { 'Content-Type': 'application/json' } }); } catch { throw new Error(navigator.onLine === false ? 'لا يوجد اتصال بالإنترنت' : 'تعذّر الوصول إلى الخادم'); }
   let j = {}; try { j = await r.json(); } catch { }
   if (!r.ok) { const e = new Error({ no_account: 'لا يوجد حساب مدرسة بهذا البريد', wrong: 'كلمة المرور غير صحيحة', locked: 'محاولات كثيرة، انتظري ربع ساعة ثم أعيدي المحاولة', other_school: 'هذا البريد مرتبط بحساب مدرسة آخر', forbidden: 'هذا الجهاز لا يملك صلاحية تعديل الحساب' }[j.error] || (r.status === 404 ? 'يلزم تحديث خادم المزامنة (Setup-Cloud-Sync.bat)' : 'خطأ من الخادم ' + r.status)); e.code = j.error; throw e; }

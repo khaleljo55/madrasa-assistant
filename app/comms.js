@@ -3,7 +3,7 @@
 // يعتمد على خادم المزامنة المشفّرة (قاعدة D1)، وكلمة عبور القناة هي صلاحية الإدارة.
 // المحتوى هنا (الرسائل والأسماء) يُحفظ في قاعدة الخادم غير مشفّر من الطرفين، فلا تُرسل عبره بيانات طالبات حساسة.
 const CM = { grp: 'staff', tab: 'req', sTab: 'req', users: [], sent: [], sentS: [], chat: [], threads: [], dmUid: null, dm: [], loading: false, at: 0, err: '', sum: { pending: 0, chatLast: 0, dmLast: 0 }, notified: { pending: 0, chat: 0, dm: 0 }, to: 'all', pick: new Set(), sTo: 'students', sPick: new Set(), sCls: new Set() };
-const STAFF_BASE = 'https://khaleljo55.github.io/madrasa-assistant/staff/';
+const STAFF_BASE = BRAND.pages + 'staff/';
 const CM_ROLE = { teacher: 'معلمة', admin: 'إدارية', student: 'طالبة' };
 const cmStaff = (u) => u.role !== 'student', cmStu = (u) => u.role === 'student';
 const cmReady = () => typeof RELAY !== 'undefined' && !!(RELAY.cfg && RELAY.id && RELAY.tok);
@@ -19,8 +19,7 @@ async function cmApi(path, opt = {}) {
   return j;
 }
 const cmLink = (dir = 'staff') => {
-  let base = STAFF_BASE.replace(/staff\/$/, dir + '/');
-  if (IS_WEBAPP && /^https?:/.test(location.protocol)) base = new URL(dir + '/', location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '')).href;
+  const base = brandLink(dir);
   return `${base}#s=${RELAY.id}&r=${encodeURIComponent(RELAY.cfg.url)}&n=${encodeURIComponent(db.settings.schoolName || '')}`;
 };
 async function cmLoad(force) {

@@ -83,7 +83,7 @@ echo [4/4] تم بناء ملف التثبيت بنجاح: %SETUP%
 echo.
 
 REM النشر في صفحة الإصدارات (اختياري)
-set "PUBURL=https://github.com/khaleljo55/madrasa-assistant/releases/new?tag=v%VER%"
+set "PUBURL=https://github.com/madrasa-assistant/app/releases/new?tag=v%VER%"
 where gh >nul 2>&1
 if errorlevel 1 goto manualpub
 choice /c YN /m "هل تريد نشر الإصدار %VER% تحديثاً تلقائياً (Y نعم / N لا)"
@@ -93,11 +93,11 @@ if errorlevel 1 (
   echo  سجّل الدخول إلى GitHub مرة واحدة: اضغط Enter ثم انسخ الرمز إلى المتصفح.
   gh auth login --hostname github.com --git-protocol https --web
 )
-gh release view v%VER% -R khaleljo55/madrasa-assistant >nul 2>&1
+gh release view v%VER% -R madrasa-assistant/app >nul 2>&1
 if errorlevel 1 (
-  gh release create v%VER% "%SETUP%" -R khaleljo55/madrasa-assistant --target main --title "المساعد الإداري %VER%" --notes-file RELEASE.md --latest
+  gh release create v%VER% "%SETUP%" -R madrasa-assistant/app --target main --title "المساعد الإداري %VER%" --notes-file RELEASE.md --latest
 ) else (
-  gh release upload v%VER% "%SETUP%" -R khaleljo55/madrasa-assistant --clobber
+  gh release upload v%VER% "%SETUP%" -R madrasa-assistant/app --clobber
 )
 if errorlevel 1 (
   echo  تعذّر النشر التلقائي؛ سيُفتح النشر اليدوي.
